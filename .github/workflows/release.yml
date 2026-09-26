@@ -1,18 +1,29 @@
-# Publish a tagged release to npm.
+# Publish a tagged release to npm through TRUSTED PUBLISHING (OIDC).
 #
-# Triggered by pushing a `v*` tag. The tag is the release decision: create it only
-# after `pnpm run check` is green on your machine, because CI cannot reproduce that
-# ladder here — typecheck, tests and the client build need the DSH source checkout
-# that this repository's `link:` devDependencies point at.
+# No token, no OTP: GitHub mints a short-lived OIDC identity, npm verifies it against
+# the trusted publisher configured for this package, and the publish is authorised.
+# `permissions.id-token: write` is what makes that possible — without it npm falls
+# back to a token and fails.
 #
-# Publish runs with `--ignore-scripts` for that reason: `prepublishOnly` would call
-# `pnpm run check` and fail for want of that checkout. The publish SURFACE is still
-# gated — the job runs the same self-contained check CI runs on every push — and the
-# artifacts themselves are committed under `lib/`, so what is published is exactly
-# what was reviewed.
+# Two things this repository cannot do for you:
+#   1. The FIRST version was published interactively (npm requires the package to
+#      exist before a trusted publisher can be attached to it — its settings page is
+#      where the publisher is configured).
+#   2. Someone with publish rights must add the trusted publisher once, at
+#      https://www.npmjs.com/package/@sidequest-007/dsh-atlas/access → Trusted Publisher:
+#        Organization or user: jameswatt139240-crypto
+#        Repository:           dsh-ATLAS
+#        Workflow filename:    release.yml       (filename only, not a path)
+#        Allowed actions:      publish directly with `npm publish`  ← tick this
+#      Leave `npm stage publish` allowed (it is always allowed) if offered.
 #
-# One repository secret is required: NPM_TOKEN (an npm automation token with
-# publish rights on the @sidequest-007 scope).
+# Publish runs with `--ignore-scripts` because `prepublishOnly` would call
+# `pnpm run check`, and typecheck/tests/build need the DSH source checkout that this
+# repository's `link:` devDependencies point at. The publish SURFACE is still gated
+# below, and `lib/` is committed, so what ships is exactly what was reviewed.
+#
+# The tag is the release decision: create it only after `pnpm run check` is green.
+
 name: release
 
 on:
@@ -20,7 +31,8 @@ on:
     tags: ['v*']
 
 permissions:
-  contents: write
+  id-token: write   # required for OIDC trusted publishing
+  contents: read
 
 jobs:
   publish:
@@ -29,8 +41,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      # Trusted publishing needs npm >= 11.5.1; the runner's bundled npm is not
+      # guaranteed to be that new, and this is a release job, so pin it up front.
+      - name: Use an npm that can do OIDC
+        run: npm install --global npm@latest && npm --version
       - name: Publish-surface gate
         run: node scripts/verify-publish-surface.mjs
       # Idempotent: re-pushing a tag (or tagging a version that was already published
@@ -46,8 +63,7 @@ jobs:
           else
             echo "already=no" >> "$GITHUB_OUTPUT"
           fi
+      # No NODE_AUTH_TOKEN on purpose: npm exchanges the OIDC identity itself.
       - name: Publish
         if: steps.published.outputs.already == 'no'
         run: npm publish --ignore-scripts
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -273,9 +273,17 @@ pnpm run verify:publish  # publish-surface gate on its own
   `.github/workflows/publish-surface.yml` runs the self-contained gate on every push:
   it needs no registry and no DSH checkout, because it packs the committed `lib/` and
   inspects the tarball. `.github/workflows/release.yml` publishes on a `v*` tag with
-  `--ignore-scripts` (the full ladder needs the DSH source checkout, which CI does not
-  have) and needs one secret, `NPM_TOKEN`. To publish by hand instead, run
-  `npm publish --registry https://registry.npmjs.org` (a mirror such as
+  **trusted publishing (OIDC)** — no `NPM_TOKEN`, no OTP: GitHub mints a short-lived
+  identity (`permissions: id-token: write`) and npm verifies it against the trusted
+  publisher configured for this package. That configuration is one-time, lives at
+  `https://www.npmjs.com/package/@sidequest-007/dsh-atlas/access` → *Trusted
+  Publisher* (user `jameswatt139240-crypto`, repository `dsh-ATLAS`, workflow filename
+  `release.yml`, "publish directly" allowed), and could only be added **after** the
+  first version existed — npm attaches a trusted publisher to a package, so 1.0.0
+  itself was published interactively. The job also skips itself when the tagged
+  version is already on npm, and runs `npm publish --ignore-scripts` (the full ladder
+  needs the DSH source checkout, which CI does not have). To publish by hand instead,
+  run `npm publish --registry https://registry.npmjs.org` (a mirror such as
   `registry.npmmirror.com` cannot accept a publish).
 
 ## Compatibility

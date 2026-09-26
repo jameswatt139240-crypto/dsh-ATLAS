@@ -269,8 +269,14 @@ pnpm run verify:publish  # 单独运行发布面门禁
 
   `.github/workflows/publish-surface.yml` 在每次 push 上跑**自足**门禁（不需要 registry、也不需要 DSH 检出，
   它只是把已提交的 `lib/` 打成 tarball 再检查）；`.github/workflows/release.yml` 在 `v*` tag 上用
-  `--ignore-scripts` 发布（完整梯子依赖 DSH 源码检出，CI 里没有），需要一个 `NPM_TOKEN` secret。
-  若要手动发布：`npm publish --registry https://registry.npmjs.org`（镜像如 `registry.npmmirror.com` 不能接收发布）。
+  **可信发布（OIDC / Trusted Publishing）**：**既不要 `NPM_TOKEN` 也不要 OTP** —— GitHub 用
+  `permissions: id-token: write` 签发一次性身份，npm 按该包配置的 trusted publisher 校验后授权发布。
+  这项配置是一次性的，位置在 `https://www.npmjs.com/package/@sidequest-007/dsh-atlas/access` →
+  *Trusted Publisher*（user `jameswatt139240-crypto`、repository `dsh-ATLAS`、workflow 文件名 `release.yml`、
+  勾选"允许直接 publish"），而且**只能在包已存在之后添加** —— trusted publisher 是挂在包上的，所以 1.0.0 本身
+  是交互式发布的。该 job 还会在"该版本已在 npm 上"时自动跳过，并以 `--ignore-scripts` 发布（完整梯子依赖
+  DSH 源码检出，CI 里没有）。若要手动发布：`npm publish --registry https://registry.npmjs.org`
+  （镜像如 `registry.npmmirror.com` 不能接收发布）。
 
 ## 兼容性
 
