@@ -1,7 +1,7 @@
 {
   "name": "@sidequest-007/dsh-atlas",
   "description": "@ Last, All Sources. One @ . Any plugin can register.",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "license": "MIT",
   "author": "Side Quest Labs",
   "publishConfig": {
@@ -27,7 +27,8 @@
     "url": "git+https://github.com/jameswatt139240-crypto/dsh-ATLAS.git"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=22",
+    "dsh": ">=0.1.6-alpha.1"
   },
   "type": "module",
   "main": "lib/index.js",

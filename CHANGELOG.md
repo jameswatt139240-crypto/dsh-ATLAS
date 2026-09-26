@@ -2,6 +2,17 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 的组织方式，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.0.1] - 2026-09-26
+
+### 变更
+
+- **声明 DSH 版本要求**：`package.json` 新增 `engines.dsh` = `>=0.1.6-alpha.1`（本插件实测运行于该版本）。
+  社区插件市场（`dshmarket`）的卡片会读取 `engines.dsh`（或 lockstep 的 `@deepseek-ai/dsh-*` peers）来显示"主机兼容"角标；
+  此前只有 `engines.node`，市场无从判断主机是否满足。
+- **发布流程改为 OIDC 可信发布**：`.github/workflows/release.yml` 用 GitHub Actions 的 OIDC 身份发布，
+  **不再需要 `NPM_TOKEN`**，也不再需要 2FA/OTP 动态码（npm 的 2026-07-31 changelog 已计划于 2027-01 取消 bypass-2FA token 的直接发布权）。
+  首次发布（1.0.0）仍是交互式完成的，因为 npm 的 trusted publisher 只能挂在**已存在**的包上。
+
 ## [1.0.0] - 2026-09-26
 
 首个统一 `@` 提及版本，基于 [`dsh-at-file`](https://github.com/FSMargoo/dsh-at-file) v0.6.5（MIT）扩展。
