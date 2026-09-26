@@ -44,10 +44,12 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
-      # Trusted publishing needs npm >= 11.5.1; the runner's bundled npm is not
-      # guaranteed to be that new, and this is a release job, so pin it up front.
+      # Trusted publishing needs npm >= 11.5.1. Pin the MAJOR: `npm@latest` is now
+      # npm 12, which requires a newer Node than the runner's and changes
+      # `npm pack --json` enough to break the gate below (observed live: the gate died
+      # on `packed[0].files` when this said `@latest`).
       - name: Use an npm that can do OIDC
-        run: npm install --global npm@latest && npm --version
+        run: npm install --global npm@11 && npm --version
       - name: Publish-surface gate
         run: node scripts/verify-publish-surface.mjs
       # Idempotent: re-pushing a tag (or tagging a version that was already published

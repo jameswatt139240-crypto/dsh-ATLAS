@@ -65,11 +65,30 @@ const REQUIRED = [
   'assets/screenshots/file-mention-settings.png',
 ]
 
-const packed = JSON.parse(execSync('npm pack --dry-run --json', {
-  encoding: 'utf8',
-  stdio: ['ignore', 'pipe', 'ignore'],
-}))
-const files = packed[0].files.map(entry => entry.path)
+/**
+ * The file list `npm pack --dry-run --json` reports.
+ *
+ * Two shapes exist in the wild: npm <= 11 answers with an ARRAY of pack results,
+ * while newer npm prints leading notices before the JSON and/or wraps the result
+ * differently — the release job died on `packed[0].files` when the workflow
+ * installed `npm@latest`. So: start at the first bracket, then accept either an
+ * array, a `{ files }` object, or an object keyed by package name.
+ * @returns the tarball's paths.
+ */
+function packedPaths() {
+  const raw = execSync('npm pack --dry-run --json', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+  const start = raw.search(/[[{]/u)
+  if (start < 0) throw new Error(`npm pack --json printed no JSON: ${raw.slice(0, 200)}`)
+  const parsed = JSON.parse(raw.slice(start))
+  const results = Array.isArray(parsed)
+    ? parsed
+    : (Array.isArray(parsed.files) ? [parsed] : Object.values(parsed))
+  const files = results.flatMap(result => (Array.isArray(result?.files) ? result.files : []))
+  if (files.length === 0) throw new Error(`npm pack --json reported no files: ${raw.slice(0, 200)}`)
+  return files.map(entry => entry.path)
+}
+
+const files = packedPaths()
 
 const problems = []
 for (const path of files) {
