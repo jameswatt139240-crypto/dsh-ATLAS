@@ -1,0 +1,14 @@
+# The bundle patch this package contributes to a profile (dsh.bundle.patch).
+#
+# `name` is the MODULE SPECIFIER the Loader imports, and it must equal this
+# package's own `name`: `dsh-client-modules` keys one client record per package
+# and finds the package by matching the Loader entry name against the nearest
+# manifest's `name`. A scope change on one side only (studio naming:
+# @sidequest-007/dsh-atlas) makes the host half load while the client half silently
+# never registers — the `@` menu then shows only other sources.
+#
+# `id` stays the unscoped plugin id: it is the entry label patches target, not
+# the package identity, and the product's display name is dsh-ATLAS.
+- insert:
+    - id: dsh-atlas
+      name: '@sidequest-007/dsh-atlas'

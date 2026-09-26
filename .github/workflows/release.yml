@@ -1,0 +1,53 @@
+# Publish a tagged release to npm.
+#
+# Triggered by pushing a `v*` tag. The tag is the release decision: create it only
+# after `pnpm run check` is green on your machine, because CI cannot reproduce that
+# ladder here — typecheck, tests and the client build need the DSH source checkout
+# that this repository's `link:` devDependencies point at.
+#
+# Publish runs with `--ignore-scripts` for that reason: `prepublishOnly` would call
+# `pnpm run check` and fail for want of that checkout. The publish SURFACE is still
+# gated — the job runs the same self-contained check CI runs on every push — and the
+# artifacts themselves are committed under `lib/`, so what is published is exactly
+# what was reviewed.
+#
+# One repository secret is required: NPM_TOKEN (an npm automation token with
+# publish rights on the @sidequest-007 scope).
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - name: Publish-surface gate
+        run: node scripts/verify-publish-surface.mjs
+      # Idempotent: re-pushing a tag (or tagging a version that was already published
+      # by hand) must not produce a red run — npm cannot publish over a version.
+      - name: Is this version already on npm?
+        id: published
+        run: |
+          name="$(node -p "require('./package.json').name")"
+          version="$(node -p "require('./package.json').version")"
+          if npm view "${name}@${version}" version >/dev/null 2>&1; then
+            echo "already=yes" >> "$GITHUB_OUTPUT"
+            echo "${name}@${version} is already published; nothing to do."
+          else
+            echo "already=no" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Publish
+        if: steps.published.outputs.already == 'no'
+        run: npm publish --ignore-scripts
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

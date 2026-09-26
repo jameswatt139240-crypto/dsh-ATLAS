@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="360" viewBox="0 0 880 360" role="img" aria-label="The @ data-source seam: a plugin's browser half lists candidates while the menu is open, its host half resolves one reference once at send, and the registry gates the declaration">
+  <rect x="0" y="0" width="880" height="360" rx="18" fill="#0f1420"/>
+  <rect x="0.5" y="0.5" width="879" height="359" rx="17.5" fill="none" stroke="#26304a"/>
+
+  <text x="40" y="58" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif" font-size="22" font-weight="600" fill="#eef1f7">The @ data-source seam</text>
+  <text x="40" y="84" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif" font-size="14" fill="#8f9bb3">A plugin registers a provider; the menu and the injection read the live registry.</text>
+
+  <rect x="40" y="110" width="240" height="120" rx="12" fill="#141a2b" stroke="#2b3450"/>
+  <text x="60" y="138" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#cfe0ff">Your plugin · browser half</text>
+  <text x="60" y="164" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#9aa7bd">list(query, ctx)</text>
+  <text x="60" y="186" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#7f8dab">runs while the menu is open</text>
+  <text x="60" y="208" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#7f8dab">open(item) → the chip's click</text>
+
+  <rect x="320" y="110" width="240" height="120" rx="12" fill="#141a2b" stroke="#2b3450"/>
+  <text x="340" y="138" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#cfe0ff">Your plugin · host half</text>
+  <text x="340" y="164" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#9aa7bd">resolve(item, ctx)</text>
+  <text x="340" y="186" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#7f8dab">runs once, at send</text>
+  <text x="340" y="208" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#7f8dab">ctx.cwd · ctx.sessionId · signal</text>
+
+  <rect x="600" y="110" width="240" height="120" rx="12" fill="#132a4d" stroke="#3f6fd8"/>
+  <text x="620" y="138" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#d8e5ff">Registry gate</text>
+  <text x="620" y="164" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#bcd2ff">scopes + testedOn required</text>
+  <text x="620" y="186" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#9db8f0">duplicate id → throws</text>
+  <text x="620" y="208" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#9db8f0">mismatch → verified: false</text>
+
+  <text x="40" y="266" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#8f9bb3">What the user commits stays plain text:  @atlas:your-provider/item</text>
+
+  <rect x="40" y="286" width="800" height="46" rx="10" fill="#141a2b" stroke="#2b3450"/>
+  <text x="60" y="314" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12.5" fill="#cbd6ea">&lt;atlas-reference provider="…" item="…" scopes="…" verified="true"&gt;…&lt;/atlas-reference&gt;</text>
+
+  <text x="40" y="352" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#7f8dab">16 KiB per reference · 48 KiB per step · overflow is truncated and marked, never silently passed on</text>
+</svg>

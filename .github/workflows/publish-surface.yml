@@ -1,0 +1,31 @@
+# The publish-surface gate, and nothing else.
+#
+# This repository's devDependencies are `link:` entries into a DSH source checkout
+# (`../deepseek-harness`), so a plain clone cannot run the full ladder — typecheck,
+# tests and the client build all need that checkout beside it. What CAN run
+# anywhere is the gate that decides what a consumer receives: the real tarball plus
+# every invariant it must satisfy (internal artifacts, README assets, ad-free
+# bundle, local-path leaks, the one-package-name invariant).
+#
+# Run `pnpm run check` locally before tagging; a green run here means the artifact
+# is publishable, not that the sources compile.
+name: publish surface
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  surface:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # No `npm install`: the gate reads the committed `lib/`, packs the tarball and
+      # inspects it, so it needs nothing from the registry.
+      - name: Publish-surface gate
+        run: node scripts/verify-publish-surface.mjs

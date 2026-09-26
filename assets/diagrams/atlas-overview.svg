@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="300" viewBox="0 0 880 300" role="img" aria-label="dsh-ATLAS: one @ trigger, five built-in categories with their glyphs, plus any plugin's own category">
+  <rect x="0" y="0" width="880" height="300" rx="18" fill="#0f1420"/>
+  <rect x="0.5" y="0.5" width="879" height="299" rx="17.5" fill="none" stroke="#26304a"/>
+
+  <text x="40" y="68" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif" font-size="34" font-weight="700" fill="#eef1f7">dsh-ATLAS</text>
+  <text x="40" y="98" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif" font-size="15" fill="#8f9bb3">@ Last, All Sources — one @, every source, and any plugin can register its own.</text>
+
+  <g font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif" font-size="14">
+    <rect x="40" y="122" width="81" height="36" rx="10" fill="#182036" stroke="#2b3450"/>
+    <g transform="translate(50,133)" fill="none" stroke="#8fa8e0" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 1.5h5l3 3v8H3z"/>
+      <path d="M8 1.5V5h3"/>
+    </g>
+    <text x="70" y="146" fill="#dbe3f4">@file</text>
+
+    <rect x="129" y="122" width="95" height="36" rx="10" fill="#182036" stroke="#2b3450"/>
+    <g transform="translate(139,133)" fill="none" stroke="#8fa8e0" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M1.5 3.5h4l1.5 2h5.5v6.5h-11z"/>
+    </g>
+    <text x="159" y="146" fill="#dbe3f4">@folder</text>
+
+    <rect x="232" y="122" width="88" height="36" rx="10" fill="#182036" stroke="#2b3450"/>
+    <g transform="translate(242,133)" fill="none" stroke="#8fa8e0" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M7 1.5l1.5 4L12.5 7l-4 1.5L7 12.5 5.5 8.5 1.5 7l4-1.5z"/>
+    </g>
+    <text x="262" y="146" fill="#dbe3f4">@skill</text>
+
+    <rect x="328" y="122" width="81" height="36" rx="10" fill="#182036" stroke="#2b3450"/>
+    <g transform="translate(338,133)" fill="none" stroke="#8fa8e0" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M1.5 3.5h11v6.5H7L4.5 12.5V10H1.5z"/>
+    </g>
+    <text x="358" y="146" fill="#dbe3f4">@chat</text>
+
+    <rect x="417" y="122" width="95" height="36" rx="10" fill="#182036" stroke="#2b3450"/>
+    <g transform="translate(427,133)" fill="none" stroke="#8fa8e0" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M7 1.5l5 2.8v5.4L7 12.5l-5-2.8V4.3z"/>
+    </g>
+    <text x="447" y="146" fill="#dbe3f4">@plugin</text>
+
+    <rect x="621" y="122" width="219" height="36" rx="10" fill="#132a4d" stroke="#3f6fd8"/>
+    <g transform="translate(631,133)" fill="none" stroke="#bcd2ff" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M7 3v8M3 7h8"/>
+    </g>
+    <text x="651" y="146" fill="#bcd2ff">@atlas:your-provider/…</text>
+  </g>
+
+  <text x="40" y="200" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#8f9bb3">Type @ and letters search every category at once · category rows stay pinned · groups fold</text>
+  <text x="40" y="224" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#8f9bb3">A committed mention carries a marker and its provenance — never file content</text>
+
+  <line x1="40" y1="248" x2="840" y2="248" stroke="#26304a"/>
+  <text x="40" y="272" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#7f8dab">shipped here: five categories plus @git, each with its own glyph</text>
+  <text x="621" y="272" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#9db8f0">added by a plugin, no rebuild</text>
+</svg>

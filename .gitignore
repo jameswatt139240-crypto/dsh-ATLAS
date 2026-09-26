@@ -1,0 +1,18 @@
+node_modules/
+coverage/
+*.tsbuildinfo
+.DS_Store
+
+# Eason/ — 内部计划、市场分析与执行记录：不进 git 提交，不进 npm 发布物
+Eason/
+
+# AI 编程助手的说明与工作流文件：只保留在本地工作副本，不提交、不发布
+AGENTS.md
+CLAUDE.md
+.agents/
+.claude/
+.cursor/
+skills/
+
+# 构建产物 sourcemap：内联了完整 TypeScript 源码与本机绝对路径，既不入库也不发布
+lib/*.map

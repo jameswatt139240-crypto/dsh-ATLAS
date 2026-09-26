@@ -1,0 +1,29 @@
+# NOTICE
+
+dsh-ATLAS (`dsh-atlas`) is a derivative work of **dsh-at-file**
+(<https://github.com/FSMargoo/dsh-at-file>), which is licensed under the MIT
+License. That project's copyright notice and license text are preserved
+verbatim in `LICENSE-ORIGINAL`, and its attribution travels with the files that
+came from it.
+
+## License map
+
+| Part | License |
+|---|---|
+| Files carried over from dsh-at-file | MIT — see `LICENSE-ORIGINAL` |
+| Everything added or rewritten for dsh-ATLAS | MIT — see `LICENSE` |
+
+Files carried over **unchanged** (verified byte-identical to the upstream v0.6.5
+tree): `src/paste.ts`, `src/client/search.ts`. Every other file in this
+repository was modified or written for dsh-ATLAS.
+
+## What this means in practice
+
+- dsh-ATLAS is MIT: use, study, modify, redistribute, and use it commercially,
+  including in paid products and hosted services, as long as the copyright
+  notice and the license text travel with the copies you distribute.
+- The two MIT grants (upstream's and this project's) are the same license, so
+  there is nothing to reconcile: keep `LICENSE`, `LICENSE-ORIGINAL`, and this
+  file with any redistribution, and attribution is complete.
+- No warranty is provided, and the authors are not liable for damages — the
+  standard MIT terms, as written.
