@@ -23,7 +23,7 @@
  */
 import { splitLineRange } from '../tokens.ts'
 import { decodeDraftReference, draftSessionId, type ReferenceLink } from './reference-links.ts'
-import type { SessionLabelResolver } from './session-link.ts'
+import { wireMentionAt, type SessionLabelResolver } from './session-link.ts'
 import type { ReferenceOutcome } from './ReferenceLinks.tsx'
 
 /** The attribute Lexical puts on the composer's contenteditable root. */
@@ -134,12 +134,29 @@ export interface TokenRun {
  * The run is bounded by whitespace and by a second `@` (the grammar is `@` plus
  * a run of non-whitespace, non-`@` characters), so a click anywhere inside a
  * token — including its undecorated tail — resolves to the same whole token.
+ *
+ * ONE exception, and it is load-bearing: a complete WIRE session mention
+ * (`@[label with spaces](dsh-session:…)`) is returned whole, because the
+ * whitespace rule would otherwise cut it at its first space and leave a fragment
+ * (`@[继续`) that decodes as a file path — opening a nonexistent file (observed
+ * live as `cannot resolve target "…\继续": ENOENT`). The official mention
+ * vocabulary always spells a session reference this way, so the bracket form is
+ * the only spelling that can carry a label with spaces.
  * @param text - one line's text.
  * @param offset - the character offset the caret sits at.
  * @returns the token and its span, or undefined when no `@` governs that offset.
  */
 export function tokenRunAt(text: string, offset: number): TokenRun | undefined {
   if (offset < 0 || offset > text.length) return undefined
+  // WIRE first: a mention's label may contain spaces, so the `@` that governs an
+  // offset inside it is NOT reachable by walking back to the whitespace boundary.
+  const trigger = text.lastIndexOf('@', offset)
+  if (trigger >= 0) {
+    const wire = wireMentionAt(text, trigger)
+    if (wire !== undefined && offset <= wire.end) {
+      return { token: text.slice(trigger, wire.end), start: trigger, end: wire.end }
+    }
+  }
   let start = offset
   while (start > 0 && !isSpace(text[start - 1] as string)) start -= 1
   let end = offset

@@ -34,6 +34,26 @@ const SESSION_URI_SCHEME = 'dsh-session:'
 export const WIRE_MENTION_RE = /^@\[([^\]\n]*)\]\((dsh-session:[^)\s]+)\)$/u
 
 /**
+ * The wire mention that STARTS at one character offset of a line, if any.
+ *
+ * The composer's token reader is whitespace-bounded, which is exactly why this
+ * exists: a session label routinely contains spaces (`@[继续 LoongCrush 项目的任务](…)`)
+ * and the whitespace rule would cut the mention at its first space, leaving a
+ * fragment that decodes as a FILE path. `$` is replaced by a lookahead so the
+ * regex can be anchored at a position inside a longer line.
+ * @param text - one line's text.
+ * @param offset - the offset the mention would start at (the `@`).
+ * @returns the mention and its end offset, or undefined when none starts there.
+ */
+export function wireMentionAt(text: string, offset: number): { readonly end: number } | undefined {
+  if (text[offset] !== '@') return undefined
+  const match = /@\[([^\]\n]*)\]\((dsh-session:[^)\s]+)\)(?=\s|$)/uy
+  match.lastIndex = offset
+  const found = match.exec(text)
+  return found === null ? undefined : { end: offset + found[0].length }
+}
+
+/**
  * The `dsh-session:` URI inside one wire mention, or undefined for any other
  * spelling. Shared so the sent-message decoder and the draft activation can ask
  * the same question instead of each keeping its own copy of the grammar.

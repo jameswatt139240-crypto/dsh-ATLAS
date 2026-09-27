@@ -49,6 +49,13 @@ const liveRoots = new Set<Root>()
 const SESSION_ID = 'session-syw-v016-0001'
 const WIRE_SESSION = `@[${SESSION_ID}](dsh-session:InNlc3Npb24tc3l3LXYwMTYtMDAwMSI)`
 
+/**
+ * The reference the user actually typed, from the session whose label has spaces
+ * (`继续 LoongCrush J 项目的任务`). This is the form the tokenizer used to cut in half.
+ */
+const SPACED_ID = 'session-9efe1297-867a-4fb2-adbd-edc5c978b978'
+const WIRE_SESSION_SPACED = `@[继续 LoongCrush J 项目的任务](dsh-session:InNlc3Npb24tOWVmZTEyOTctODY3YS00ZmIyLWFkYmQtZWRjNWM5NzhiOTc4Ig)`
+
 /** The caret stub installed by {@link stubCaret}. */
 let restoreCaret: (() => void) | undefined
 /** The Custom Highlight API stub installed by {@link stubHighlight}. */
@@ -200,6 +207,27 @@ describe('tokenRunAt', () => {
     expect(tokenRunAt('@a.ts', 99)).toBeUndefined()
     expect(tokenRunAt('@a.ts', -1)).toBeUndefined()
   })
+
+  it('keeps a WIRE session mention whole even though its label has spaces', () => {
+    // The live failure this pins: the whitespace rule cut this mention at its
+    // first space, the fragment decoded as a FILE path, and the click answered
+    // `cannot resolve target "E:\…\dsh-atlas\继续": ENOENT`. A session label that
+    // contains spaces only exists in the bracket form, so that form is one token.
+    const line = `看 ${WIRE_SESSION_SPACED} 和 @AGENTS.md`
+    const start = 2
+    const end = start + WIRE_SESSION_SPACED.length
+    expect(tokenRunAt(line, start)).toEqual({ token: WIRE_SESSION_SPACED, start, end })
+    // Anywhere inside the mention — its label, its whitespace, its payload.
+    expect(tokenRunAt(line, start + 6)).toEqual({ token: WIRE_SESSION_SPACED, start, end })
+    expect(tokenRunAt(line, start + 14)).toEqual({ token: WIRE_SESSION_SPACED, start, end })
+    expect(tokenRunAt(line, end - 1)).toEqual({ token: WIRE_SESSION_SPACED, start, end })
+    // The mention's own end offset still belongs to it (the run covers the caret),
+    // and the FIRST offset after the following space is the next token's trigger.
+    expect(tokenRunAt(line, end)).toEqual({ token: WIRE_SESSION_SPACED, start, end })
+    expect(tokenRunAt(line, end + 1)).toBeUndefined()
+    // And the mention after it still resolves on its own.
+    expect(tokenRunAt(line, line.length - 2)).toEqual({ token: '@AGENTS.md', start: line.indexOf('@AGENTS'), end: line.length })
+  })
 })
 
 describe('draftLink', () => {
@@ -279,6 +307,20 @@ describe('draftActivation', () => {
     expect(asked).toEqual([])
   })
 
+  it('opens a spaced-label wire mention as a session, never as a file', () => {
+    // The tokenizer hands the whole bracket form over (see `tokenRunAt`), so the
+    // activation must name the session — and must NOT ask the Host about a path,
+    // which is what produced `cannot resolve target "…\继续": ENOENT` live.
+    const activation = draftActivation(
+      WIRE_SESSION_SPACED,
+      () => open,
+      () => undefined,
+      () => undefined,
+    )
+    expect(activation?.link).toEqual({ kind: 'session', sessionId: SPACED_ID })
+    expect(activation?.run()).toBe('opened')
+  })
+
   it('promotes a bare label only on the injected session answer', () => {
     // Without a resolver a bare token keeps the rules it always had, so a name
     // the Host confirms as a path stays a file reference — the session face
@@ -299,8 +341,7 @@ describe('draftActivation', () => {
     expect(asked).toEqual([SESSION_ID])
   })
 
-  it('never lets a session answer hijack a workspace path', () => {
-    // A label that also names a real file is offered as the FILE: the resolver
+  it('never lets a session answer hijack a workspace path', () => {    // A label that also names a real file is offered as the FILE: the resolver
     // must have already refused it (that is the resolver's uniqueness rule), so
     // this pins the ordering — a Host-confirmed path is never overruled.
     const activation = draftActivation('@AGENTS.md', () => open, () => ({ exists: true }), () => undefined)
