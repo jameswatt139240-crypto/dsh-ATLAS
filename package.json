@@ -1,7 +1,7 @@
 {
   "name": "@sidequest-007/dsh-atlas",
   "description": "@ Last, All Sources. One @, every source; one click, the session it names.",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "license": "MIT",
   "author": "Side Quest Labs",
   "publishConfig": {

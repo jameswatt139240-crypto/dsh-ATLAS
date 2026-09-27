@@ -1,7 +1,7 @@
 {
   "name": "@sidequest-007/dsh-atlas",
-  "description": "@ Last, All Sources. One @ . Any plugin can register.",
-  "version": "1.0.0",
+  "description": "@ Last, All Sources. One @, every source; one click, the session it names.",
+  "version": "1.0.2",
   "entry": {
     "name": "@sidequest-007/dsh-atlas",
     "inject": []
