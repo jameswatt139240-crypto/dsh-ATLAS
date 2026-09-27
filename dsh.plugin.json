@@ -1,7 +1,7 @@
 {
   "name": "@sidequest-007/dsh-atlas",
   "description": "@ Last, All Sources. One @, every source; every reference is a clickable link, and a session link jumps to that session.",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "entry": {
     "name": "@sidequest-007/dsh-atlas",
     "inject": []

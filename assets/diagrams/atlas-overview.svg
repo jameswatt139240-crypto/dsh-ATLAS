@@ -3,7 +3,7 @@
   <rect x="0.5" y="0.5" width="879" height="299" rx="17.5" fill="none" stroke="#26304a"/>
 
   <text x="40" y="68" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif" font-size="34" font-weight="700" fill="#eef1f7">dsh-ATLAS</text>
-  <text x="40" y="98" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif" font-size="15" fill="#8f9bb3">@ Last, All Sources — one @, every source, and any plugin can register its own.</text>
+  <text x="40" y="98" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif" font-size="15" fill="#8f9bb3" textLength="798" lengthAdjust="spacingAndGlyphs">@ Last, All Sources — five built-in categories + @git + any plugin · every reference is a clickable link · a session link jumps</text>
 
   <g font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif" font-size="14">
     <rect x="40" y="122" width="81" height="36" rx="10" fill="#182036" stroke="#2b3450"/>

@@ -2,6 +2,18 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 的组织方式，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.0.4] - 2026-09-27
+
+### 文档
+
+- **配图里那行 tagline 也改了**：1.0.3 只改了 SVG 的 `aria-label`（屏幕阅读器用），**图里画出来的字还是旧的**
+  `one @, every source, and any plugin can register its own.` —— 而 README / npm / GitHub 上看到的正是这张图。
+  现在图上写的是：
+  *`@ Last, All Sources — five built-in categories + @git + any plugin · every reference is a clickable link · a session link jumps`*。
+- **给该行加了硬上界**：`textLength="798" lengthAdjust="spacingAndGlyphs"`，任何字体下都不越过卡片内缘。
+  并**实测**（headless Chromium 渲染后量盒）：`cardW=880.0 tagLeft=40.0 tagRight=838.0 fit=YES`，
+  该行宽度 798 与其声明值一致（脚本 `Eason/svg-fit-check.mjs` 留在本机，可复跑）。
+
 ## [1.0.3] - 2026-09-27
 
 ### 文档
