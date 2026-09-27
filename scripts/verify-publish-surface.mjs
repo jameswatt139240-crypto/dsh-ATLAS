@@ -165,50 +165,71 @@ const overviewSvg = readFileSync('assets/diagrams/atlas-overview.svg', 'utf8')
 const drawnLines = [...overviewSvg.matchAll(/<text[^>]*>([^<]*)<\/text>/gu)].map(match => match[1])
 /** The product's one-line summary, as each surface spells it. */
 const SURFACES = [
-  ['package.json description', pkg.description, 'en'],
-  ['dsh.plugin.json description', PLUGIN_DESCRIPTION, 'en'],
+  ['package.json description', pkg.description, 'meta'],
+  ['dsh.plugin.json description', PLUGIN_DESCRIPTION, 'meta'],
   ['README.md tagline', taglineOf('README.md'), 'en'],
   ['README.zh.md tagline', taglineOf('README.zh.md'), 'zh'],
-  ['atlas-overview.svg aria-label', /aria-label="([^"]*)"/u.exec(overviewSvg)?.[1] ?? '', 'en'],
-  ['atlas-overview.svg drawn line', drawnLines[1] ?? '', 'mixed'],
+  ['atlas-overview.svg aria-label', /aria-label="([^"]*)"/u.exec(overviewSvg)?.[1] ?? '', 'art'],
+  ['atlas-overview.svg drawn line', drawnLines[1] ?? '', 'art'],
 ]
 /**
- * Phrases each surface must carry, per language, and why each one is load-bearing.
- * The claims are the same in both languages; the SPELLING is not, so the set is
- * chosen by the surface's language rather than by loosening the check.
+ * Phrases each surface must carry, keyed by the SURFACE KIND rather than by one
+ * loosened list. The product is bilingual but a surface never mixes, and the short
+ * metadata line physically cannot carry every claim the README does - so the
+ * metadata set is the promise, while the README/diagram sets add the visible
+ * affordances ("clickable", "可点", the session jump).
+ * @type {Record<string, readonly { test: RegExp, why: string }[]>}
  */
 const PHRASES = {
+  meta: [
+    { test: /any plugin/iu, why: 'the seam: third parties register their own source' },
+    { test: /Atlas/iu, why: 'the name the tagline hangs the promise on' },
+    { test: /click/iu, why: 'you @ it, click it, jump' },
+    { test: /jump/iu, why: 'a session link navigates, the newest thing it does' },
+  ],
   en: [
     { test: /clickable/iu, why: 'a clickable link is the most visible thing the plugin does' },
-    { test: /@-able/u, why: 'the promise that any registered source becomes an @ target' },
-    { test: /any plugin/iu, why: 'the seam: third parties add their own category' },
-    { test: /categor/iu, why: 'the menu the user actually opens' },
+    { test: /any plugin/iu, why: 'the seam: third parties register their own source' },
+    { test: /click/iu, why: 'you @ it, click it, jump' },
+    { test: /jump/iu, why: 'a session link navigates, the newest thing it does' },
+    { test: /Atlas/iu, why: 'the name the tagline hangs the promise on' },
+  ],
+  /**
+   * The artwork: both its spoken label and the line drawn inside it. The drawn
+   * line IS the approved tagline, so it carries the promise ("click") rather than
+   * the adjective the README adds in prose ("clickable").
+   */
+  art: [
+    { test: /any plugin/iu, why: 'the seam: third parties register their own source' },
+    { test: /Atlas/iu, why: 'the name the tagline hangs the promise on' },
+    { test: /click/iu, why: 'you @ it, click it, jump' },
+    { test: /jump/iu, why: 'a session link navigates, the newest thing it does' },
   ],
   zh: [
     { test: /可点/u, why: 'a clickable link is the most visible thing the plugin does' },
-    { test: /可\s*@/u, why: 'the promise that any registered source becomes an @ target' },
-    { test: /任何插件/u, why: 'the seam: third parties add their own category' },
-    { test: /类别/u, why: 'the menu the user actually opens' },
-  ],
-  mixed: [
-    { test: /clickable/iu, why: 'a clickable link is the most visible thing the plugin does' },
-    { test: /@-able/u, why: 'the promise that any registered source becomes an @ target' },
-    { test: /any plugin/iu, why: 'the seam: third parties add their own category' },
+    { test: /任何插件/u, why: 'the seam: third parties register their own source' },
+    { test: /@/u, why: 'the trigger is the whole product' },
+    { test: /跳/u, why: 'a session link navigates, the newest thing it does' },
+    { test: /Atlas/u, why: 'the name the tagline hangs the promise on' },
   ],
 }
-for (const [label, text, language] of SURFACES) {
+/** Wording that was deliberately retired and must not come back. */
+const RETIRED = [
+  { test: /@-able/u, why: 'the hyphenated compound was dropped for being hard to read' },
+]
+for (const [label, text, kind] of SURFACES) {
   if (text.trim() === '') {
     problems.push(`summary invariant: ${label} is empty`)
     continue
   }
-  for (const phrase of PHRASES[language]) {
+  for (const phrase of PHRASES[kind]) {
     if (!phrase.test.test(text)) problems.push(`summary invariant: ${label} is missing /${phrase.test.source}/ (${phrase.why})`)
   }
-}
-// The wording this gate exists to keep buried.
-for (const [label, text] of SURFACES) {
+  for (const retired of RETIRED) {
+    if (retired.test.test(text)) problems.push(`summary invariant: ${label} carries retired wording /${retired.test.source}/ (${retired.why})`)
+  }
   if (/any plugin can register its own\.?\s*$/iu.test(text)) {
-    problems.push(`summary invariant: ${label} still carries the old tagline`)
+    problems.push(`summary invariant: ${label} still carries an older tagline`)
   }
 }
 

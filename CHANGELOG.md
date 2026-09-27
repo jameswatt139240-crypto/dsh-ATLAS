@@ -2,6 +2,21 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 的组织方式，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.0.6] - 2026-09-27
+
+### 文档
+
+- **tagline 换成"因果 + 承诺"句式（用户审批的 A 方案）**：
+  *`any plugin registers · Atlas does everything else · you just @ it, click it, jump anywhere`*。
+  去掉了并列形容词堆叠，也去掉了 `@-able` 这个可读性差的合成词（新门禁会把 `@-able` 当作**已退役措辞**直接判红）。
+  同步面：`README.md` / `README.zh.md` 的 tagline、`package.json` 与 `dsh.plugin.json` 的 `description`（npm 卡片）、
+  配图的 `aria-label` 与**图内那行字**、以及 **GitHub 仓库 About**。
+  中文面保持纯中文：*任何插件都能注册 · 其余交给 Atlas · 你只管 @、点、跳*。
+- **摘要门禁按"面的类型"分组，而不是放宽检查**：`meta`（两处 `description`）、`en`（英文 README/图）、
+  `zh`（中文 README）、`art`（图内那行与 aria-label）各自有必须命中的短语。原因是**短元数据行物理上装不下
+  README 的全部承诺**，而图的文案就是审批过的那句（用 `click` 而非 `clickable`）；把要求写死到"哪一类面必须说什么"，
+  比把检查放松更有意义。
+
 ## [1.0.5] - 2026-09-27
 
 ### 文档
