@@ -6,7 +6,7 @@ A **Side Quest** project (工作室：支线任务, **Side Quest Labs**) — npm
 
 <img src="assets/diagrams/atlas-overview.svg" alt="dsh-ATLAS: one @ trigger, five built-in categories plus the bundled git category, and a category any plugin can register" width="880">
 
-**@ Last, All Sources.** One `@`, every source — **any plugin registers · Atlas does everything else · you just `@` it, click it, jump anywhere.** Every reference it draws is a **clickable link** (the theme's link colour, so blue in dark mode), and a **session** link jumps straight to that session.
+**@ Last, All Sources.** One `@`, every source — **any plugin registers; Atlas does the rest · you just `@` it, click it, then jump anywhere.** Every reference it draws is a **clickable link** (the theme's link colour, so blue in dark mode), and a **session** link jumps straight to that session.
 
 Unified `@` mentions for the DeepSeek Harness web GUI: type `@` in the composer to reference **workspace files and folders**, **discoverable skills**, **past chats**, **installed plugins**, and **workspace git changes** — and any other plugin can add its own category to the same menu. Clicking a **session** mention switches the composer to that session.
 

@@ -17,6 +17,29 @@
   README 的全部承诺**，而图的文案就是审批过的那句（用 `click` 而非 `clickable`）；把要求写死到"哪一类面必须说什么"，
   比把检查放松更有意义。
 
+## [1.0.7] - 2026-09-27
+
+### 文档
+
+- **tagline 定稿（用户第二轮审批）**：*`any plugin registers; Atlas does the rest · you just @ it, click it, then jump anywhere.`*
+  —— 保留 `All Sources` 作前半句的支点（去掉它，`any plugin registers` 就没有被涵盖的对象），尾句采用 `then jump anywhere`。
+  同步面：两个 README、两处 `description`（npm 卡片）、配图 `aria-label` 与**图内那行字**、GitHub About。
+  中文面纯中文：*任何插件都能注册；其余交给 Atlas · 你只管 @、点，然后到处跳*。
+- **量过再定**：用真实卡片渲染对比三种候选 —— 用户给的**字面版** 113 字符（每字 7.06px，但首尾各出现一次
+  `jump anywhere`，读起来像口吃）、去掉重复尾巴版 93 字符（每字 8.58px，字最大）、本定稿 110 字符（每字 7.25px）。
+  用户原句里 `All Sources` 与句尾 `jump anywhere` 会语义重复，故按语义保留 `All Sources`、只换尾句。
+  对比脚本：`Eason/tagline-compare.mjs`（留在本机可复跑）。
+
+## [1.0.6] - 2026-09-27
+
+### 文档
+
+- **tagline 换成"因果 + 承诺"句式（用户审批的 A 方案）**：*`any plugin registers · Atlas does everything else · you just @ it, click it, jump anywhere`*。
+  去掉并列形容词堆叠与 `@-able` 这个可读性差的合成词（新门禁把 `@-able` 当作**已退役措辞**直接判红）。
+  中文面纯中文：*任何插件都能注册 · 其余交给 Atlas · 你只管 @、点、跳*。
+- **摘要门禁按"面的类型"分组**：`meta` / `en` / `zh` / `art`（图内那行与 aria-label）各自有必须命中的短语 ——
+  短元数据行物理上装不下 README 的全部承诺，图的文案就是审批过的那句（`click` 而非 `clickable`）。
+
 ## [1.0.5] - 2026-09-27
 
 ### 文档
