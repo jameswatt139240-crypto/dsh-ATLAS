@@ -31,6 +31,10 @@ interface BootOptions {
   withoutNamespace?: boolean
   withoutSessionRemote?: boolean
   remoteMount?: () => Promise<() => void>
+  /** The session list the draft's bare-label resolver reads (ids + display titles). */
+  sessionList?: { ids: readonly string[]; byId: Record<string, { displayTitle: string }> }
+  /** How `ctx.sessions.open` answers; the default records the call. */
+  openSession?: (sessionId: string) => void
 }
 
 /** Boot the plugin body over a stub-service context and return the recorded surfaces. */
@@ -84,7 +88,16 @@ async function boot(options: BootOptions = {}) {
   }
   ctx.provide('slots', { inject: slotsInject, register: slotsRegister })
   ctx.provide('locale', { register: localeRegister, bind })
-  ctx.provide('sessions', { scope: scopeSession })
+  // The draft's session face: a bare `@label` may only become a session link on
+  // this list's answer, and opening one goes through the service the sidebar's
+  // own rows use.
+  const openSessionSpy = vi.fn(options.openSession ?? (() => {}))
+  const sessionList = options.sessionList ?? { ids: [], byId: {} }
+  ctx.provide('sessions', {
+    scope: scopeSession,
+    list: { getSnapshot: () => ({ ids: sessionList.ids, byId: sessionList.byId }) },
+    open: openSessionSpy,
+  })
   apply(ctx as unknown as Parameters<typeof apply>[0])
   // The Remote mount effect is asynchronous; settle one tick.
   await Promise.resolve()
@@ -92,6 +105,7 @@ async function boot(options: BootOptions = {}) {
   return {
     ctx, registerSource, sessionOf, sessionScope, scopeSession, mount, localeRegister, bind,
     slotsRegister, slotsInject, openPath, getSettings, updateSettings, sourceDispose, openReference,
+    openSessionSpy,
     setRemoteSettings: (next: AtFileSettings) => { settings = next },
   }
 }
@@ -165,6 +179,23 @@ function referenceBridge(booted: Awaited<ReturnType<typeof boot>>): RegisteredRe
     .find(call => (call[0] as { id?: string })?.id === 'atlas-reference-links')?.[0] as RegisteredReferenceBridge | undefined
   expect(entry).toBeDefined()
   return entry as RegisteredReferenceBridge
+}
+
+/** The registered composer bridge, narrowed to the face the session rules live on. */
+interface RegisteredDraftBridge {
+  name: string
+  order: number
+  inject: (sessionId: string) => {
+    actionFor: (link: BridgeLink) => (() => unknown) | undefined
+    resolveSession?: (label: string) => string | undefined
+  }
+}
+
+function draftBridge(booted: Awaited<ReturnType<typeof boot>>): RegisteredDraftBridge {
+  const entry = booted.slotsRegister.mock.calls
+    .find(call => (call[0] as { id?: string })?.id === 'atlas-draft-links')?.[0] as RegisteredDraftBridge | undefined
+  expect(entry).toBeDefined()
+  return entry as RegisteredDraftBridge
 }
 
 const s1 = { sessionId: 's1' as SessionId }
@@ -509,6 +540,46 @@ describe('dsh-atlas client apply', () => {
     booted.openReference.mockClear()
     expect(bridge.inject('s9').actionFor({ kind: 'skill', name: 'x' })).toBeUndefined()
     expect(booted.openReference).not.toHaveBeenCalled()
+  })
+
+  it('switches to the session a wire mention names', async () => {
+    const booted = await boot()
+    const bridge = draftBridge(booted)
+    bridge.inject('s1').actionFor({ kind: 'session', sessionId: 'session-other' })?.()
+    expect(booted.openSessionSpy).toHaveBeenCalledWith('session-other')
+  })
+
+  it('reports a session reference that can no longer be opened', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const booted = await boot({
+      openSession: () => { throw new Error('sessions.select: unknown session') },
+    })
+    const bridge = draftBridge(booted)
+    // The click must survive a session the list no longer holds: the bridge
+    // reports it as a vanished reference instead of throwing into the listener.
+    expect(bridge.inject('s1').actionFor({ kind: 'session', sessionId: 'gone' })?.()).toBe('gone')
+    warn.mockRestore()
+  })
+
+  it('resolves a bare session label only on one exact answer', async () => {
+    const booted = await boot({
+      sessionList: {
+        ids: ['session-other', 'session-twin-a', 'session-twin-b'],
+        byId: {
+          'session-other': { displayTitle: 'Atlas plugin work' },
+          'session-twin-a': { displayTitle: 'Twins' },
+          'session-twin-b': { displayTitle: 'Twins' },
+        },
+      },
+    })
+    const face = draftBridge(booted).inject('s1')
+    // An id answers itself; a unique title answers too.
+    expect(face.resolveSession?.('session-other')).toBe('session-other')
+    expect(face.resolveSession?.('Atlas plugin work')).toBe('session-other')
+    // Ambiguity and unknown names answer nothing, so the file rules stay in
+    // charge: a title shared by two sessions can never pick one.
+    expect(face.resolveSession?.('Twins')).toBeUndefined()
+    expect(face.resolveSession?.('AGENTS.md')).toBeUndefined()
   })
 
   it('routes a provider mention to the open callback its provider declared', async () => {

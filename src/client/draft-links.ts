@@ -22,7 +22,8 @@
  * then only the part the framework itself coloured stays clickable.
  */
 import { splitLineRange } from '../tokens.ts'
-import { decodeDraftReference, type ReferenceLink } from './reference-links.ts'
+import { decodeDraftReference, draftSessionId, type ReferenceLink } from './reference-links.ts'
+import type { SessionLabelResolver } from './session-link.ts'
 import type { ReferenceOutcome } from './ReferenceLinks.tsx'
 
 /** The attribute Lexical puts on the composer's contenteditable root. */
@@ -266,19 +267,44 @@ export function draftTokens(): readonly DraftToken[] {
  * @param token - one draft token, `@` included.
  * @param actionFor - the session's action lookup.
  * @param verdict - the dock's last inspection verdict for one referenced path.
+ * @param resolveLabel - the session list lookup a BARE `@label` needs before it
+ *   may become a session link; omitted means bare labels stay prose and fall
+ *   through to the file rules.
  * @returns the action, or undefined when there is nothing to open.
  */
 export function draftActivation(
   token: string,
   actionFor: (link: ReferenceLink) => DraftAction | undefined,
   verdict: DraftVerdictLookup,
+  resolveLabel?: SessionLabelResolver,
 ): DraftActivation | undefined {
+  // A session token is settled by the token itself (the wire form) or by the
+  // session list (a bare label, which is why a resolver has to be injected): it
+  // never consults the Host's path verdict, because a session is not a path.
+  const session = draftSessionId(token)
+    ?? (resolveLabel === undefined || !token.startsWith('@') ? undefined : resolveLabel(token.slice(1)))
+  if (session !== undefined) return activate({ kind: 'session', sessionId: session }, actionFor)
   const link = draftLink(token)
   if (link === undefined) return undefined
   const resolved = withHostKind(link, verdict)
   if (resolved === undefined) return undefined
-  const run = actionFor(resolved)
-  return run === undefined ? undefined : { link: resolved, run }
+  return activate(resolved, actionFor)
+}
+
+/**
+ * Ask the owner for one link's action and wrap it, so every arm answers the
+ * same way: no action means no link, and a link is never drawn for a click that
+ * would do nothing.
+ * @param link - the already-decoded reference.
+ * @param actionFor - the session's action lookup.
+ * @returns the action, or undefined when the owner refuses the link.
+ */
+function activate(
+  link: ReferenceLink,
+  actionFor: (link: ReferenceLink) => DraftAction | undefined,
+): DraftActivation | undefined {
+  const run = actionFor(link)
+  return run === undefined ? undefined : { link, run }
 }
 
 /** The Host's inspection verdict for one referenced path. */

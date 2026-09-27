@@ -58,8 +58,11 @@ export const LINK_ATTRIBUTE = 'data-dsh-atlas-link'
 /** The attribute this bridge sets on a chip whose target is gone (stale styling hook). */
 export const MISSING_ATTRIBUTE = 'data-dsh-atlas-missing'
 
-/** The chip kind whose title may name a file or a skill. */
+/** The chip kind whose title may name a file, a skill, or a session. */
 const LINKABLE_KIND = 'file'
+
+/** The second linkable kind: a session chip whose title still carries the wire URI. */
+const SESSION_KIND = 'session'
 
 /** What a click on one reference did, as far as the chip is concerned. */
 export type ReferenceOutcome = 'opened' | 'gone'
@@ -99,14 +102,25 @@ export type ReferenceLinksProps = PropsRuntime<'conversation.input.overlay'> & I
  *
  * A `<button>` chip means the framework passed its reference actions and wires
  * the click itself; acting as well would open the resource twice. A chip of any
- * other kind (session, folder, skill-slash, command) is not ours to open.
+ * other kind (folder, skill-slash, command) is not ours to open — EXCEPT a
+ * session chip, which is nobody else's: DSH renders every session mention as a
+ * plain label element, so switching sessions is exactly the click this bridge
+ * has to add. Its title has to carry the wire URI for that (the host folds the
+ * mention to a bare label before the message is durable), which
+ * `decodeReferenceLink` decides by value.
  * @param chip - the chip element.
  * @returns the decoded action, or undefined when the bridge must not act.
  */
 export function chipLink(chip: Element): ReferenceLink | undefined {
   if (chip.tagName === 'BUTTON') return undefined
-  if (chip.getAttribute(CHIP_ATTRIBUTE) !== LINKABLE_KIND) return undefined
-  return decodeReferenceLink(chip.getAttribute('title'))
+  const kind = chip.getAttribute(CHIP_ATTRIBUTE)
+  if (kind !== LINKABLE_KIND && kind !== SESSION_KIND) return undefined
+  const link = decodeReferenceLink(chip.getAttribute('title'))
+  // The chip's own kind must agree with what its title decoded to: a session
+  // chip whose bare label happens to look like a path (`@a.ts`) must never be
+  // opened as that path — the label is a session title, not a workspace spelling.
+  if (link !== undefined && kind === SESSION_KIND && link.kind !== 'session') return undefined
+  return link
 }
 
 /** The visual body of a composer chip inside its host element. */

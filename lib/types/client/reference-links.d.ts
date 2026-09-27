@@ -1,12 +1,3 @@
-/**
- * The two pure pieces of the sent-message click-through: decoding one rendered
- * reference chip back into the action it can offer, and spelling the file
- * address the right Sidebar resolves.
- *
- * Both are pure string work so the browser bridge (`ReferenceLinks.tsx`) stays a
- * thin event adapter, and so the address grammar can be pinned against the
- * Harness's own implementation in the tests instead of being trusted by eye.
- */
 /** One mention of an already sent message that a click can act on. */
 export type ReferenceLink = {
     readonly kind: 'file';
@@ -25,6 +16,14 @@ export type ReferenceLink = {
     readonly kind: 'atlas';
     readonly provider: string;
     readonly item: string;
+}
+/**
+ * A SESSION reference: selecting it switches the current session, which is a
+ * main-area navigation rather than a resource the Sidebar could show.
+ */
+ | {
+    readonly kind: 'session';
+    readonly sessionId: string;
 };
 /**
  * Decode one reference chip's raw label (its `title`) into the action it offers.
@@ -34,10 +33,11 @@ export type ReferenceLink = {
  * `@atlas:provider/item`, `@[label](dsh-session:…)`, or an out-of-workspace
  * absolute path (`@E:\…` / `@E:/…`, whose drive letter is a path, not a handle).
  * Only a workspace file, a quoted path, an absolute path, a skill (whose source
- * the skill source opens) and a provider item (whose meaning belongs to that
- * provider) name something to act on. A trailing separator is a folder mention
- * (its chip kind is `folder`), and a colon in the first segment is our own handle
- * spelling unless it is a drive letter.
+ * the skill source opens), a provider item (whose meaning belongs to that
+ * provider) and a wire session mention (whose payload names its session) name
+ * something to act on. A trailing separator is a folder mention (its chip kind
+ * is `folder`), and a colon in the first segment is our own handle spelling
+ * unless it is a drive letter.
  * @param title - the chip's `title` attribute (the undecorated label).
  * @returns the mention, or undefined when there is nothing to open.
  */
@@ -49,10 +49,25 @@ export declare function decodeReferenceLink(title: string | null | undefined): R
  * decorates by syntax rather than by name: a trailing separator marks a folder
  * mention (`@src/`), whose chip kind is its own and whose click opens the
  * directory through the Host opener.
+ *
+ * A bare `@label` is deliberately left to the caller's
+ * `resolveSessions`: opening one as a session needs the live session list, and
+ * a token that names no session must still fall through to being a file path
+ * (`@docs` is a directory long before it is a session title). The wire session
+ * form needs no list, so it is decoded right here.
  * @param token - the activated token, trigger included (e.g. `@src/a.ts`).
  * @returns the mention, or undefined when nothing can be opened.
  */
 export declare function decodeDraftReference(token: string): ReferenceLink | undefined;
+/**
+ * The session one DRAFT token names, when the token itself says so.
+ *
+ * Only the wire form answers here: a bare label needs {@link SessionLabelResolver}
+ * and the live list, which is the caller's business (see `draftActivation`).
+ * @param token - one draft token, `@` included.
+ * @returns the session id to switch to, or undefined when the token carries none.
+ */
+export declare function draftSessionId(token: string): string | undefined;
 /**
  * The address of a workspace-relative file in one session: the Harness's
  * `dsh-resource://file/session/<sessionId>/<path>` form, spelled here so the

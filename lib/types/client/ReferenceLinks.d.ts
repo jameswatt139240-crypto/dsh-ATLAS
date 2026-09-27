@@ -39,7 +39,12 @@ export type ReferenceLinksProps = PropsRuntime<'conversation.input.overlay'> & I
  *
  * A `<button>` chip means the framework passed its reference actions and wires
  * the click itself; acting as well would open the resource twice. A chip of any
- * other kind (session, folder, skill-slash, command) is not ours to open.
+ * other kind (folder, skill-slash, command) is not ours to open — EXCEPT a
+ * session chip, which is nobody else's: DSH renders every session mention as a
+ * plain label element, so switching sessions is exactly the click this bridge
+ * has to add. Its title has to carry the wire URI for that (the host folds the
+ * mention to a bare label before the message is durable), which
+ * `decodeReferenceLink` decides by value.
  * @param chip - the chip element.
  * @returns the decoded action, or undefined when the bridge must not act.
  */

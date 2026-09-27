@@ -1,4 +1,5 @@
 import { type ReferenceLink } from './reference-links.ts';
+import type { SessionLabelResolver } from './session-link.ts';
 import type { ReferenceOutcome } from './ReferenceLinks.tsx';
 /** The attribute Lexical puts on the composer's contenteditable root. */
 export declare const EDITOR_SELECTOR = "[data-lexical-editor=\"true\"]";
@@ -129,9 +130,12 @@ export declare function draftTokens(): readonly DraftToken[];
  * @param token - one draft token, `@` included.
  * @param actionFor - the session's action lookup.
  * @param verdict - the dock's last inspection verdict for one referenced path.
+ * @param resolveLabel - the session list lookup a BARE `@label` needs before it
+ *   may become a session link; omitted means bare labels stay prose and fall
+ *   through to the file rules.
  * @returns the action, or undefined when there is nothing to open.
  */
-export declare function draftActivation(token: string, actionFor: (link: ReferenceLink) => DraftAction | undefined, verdict: DraftVerdictLookup): DraftActivation | undefined;
+export declare function draftActivation(token: string, actionFor: (link: ReferenceLink) => DraftAction | undefined, verdict: DraftVerdictLookup, resolveLabel?: SessionLabelResolver): DraftActivation | undefined;
 /** The Host's inspection verdict for one referenced path. */
 export interface DraftVerdict {
     /** Whether the target exists right now. */

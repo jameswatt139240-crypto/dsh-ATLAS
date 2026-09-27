@@ -102,6 +102,10 @@ const click = (target: Element): MouseEvent => {
 
 const FILE_CHIP = '<span data-ref-chip="file" title="@outsidedir/关于源代码许可的分析.md"><svg></svg>分析.md</span>'
 
+/** The live session reference, spelled exactly as the Harness wrote it into the log. */
+const SESSION_ID = 'session-syw-v016-0001'
+const WIRE_SESSION = `@[${SESSION_ID}](dsh-session:InNlc3Npb24tc3l3LXYwMTYtMDAwMSI)`
+
 describe('decodeReferenceLink', () => {
   it('decodes the mention forms that name something openable', () => {
     expect(decodeReferenceLink('@outsidedir/关于源代码许可的分析.md'))
@@ -138,7 +142,11 @@ describe('decodeReferenceLink', () => {
     // A folder mention is its own chip kind (a bare separator is not a file).
     expect(decodeReferenceLink('@docs/')).toBeUndefined()
     expect(decodeReferenceLink('@docs\\')).toBeUndefined()
+    // A session mention IS openable when the chip still carries the wire form,
+    // but a payload that is not a canonical session address stays inert.
+    expect(decodeReferenceLink(WIRE_SESSION)).toEqual({ kind: 'session', sessionId: SESSION_ID })
     expect(decodeReferenceLink('@[label](dsh-session:abc)')).toBeUndefined()
+    expect(decodeReferenceLink('@[label](dsh-session:%%%)')).toBeUndefined()
   })
 
   it('rejects empty and malformed labels', () => {
@@ -233,7 +241,12 @@ describe('chipLink', () => {
 
   it('refuses a chip the framework already wired, and every other kind', () => {
     expect(chipLink(chipOf('button', 'file', '@a.ts'))).toBeUndefined()
+    // A SESSION chip is this bridge's business only when its title names the
+    // session: a bare label must NOT fall through to the file rules, because
+    // that is what used to render a session mention as an openable path.
     expect(chipLink(chipOf('span', 'session', '@a.ts'))).toBeUndefined()
+    expect(chipLink(chipOf('span', 'session', WIRE_SESSION))).toEqual({ kind: 'session', sessionId: SESSION_ID })
+    expect(chipLink(chipOf('span', 'session', '@[label](dsh-session:abc)'))).toBeUndefined()
     expect(chipLink(chipOf('span', 'file', '@plugin:x'))).toBeUndefined()
   })
 })

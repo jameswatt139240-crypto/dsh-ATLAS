@@ -35,6 +35,7 @@ import {
 } from './draft-links.ts'
 import { referenceKey } from './model.ts'
 import type { ReferenceLink } from './reference-links.ts'
+import type { SessionLabelResolver } from './session-link.ts'
 import type { ReferenceOutcome } from './ReferenceLinks.tsx'
 
 /** What the session's overlay shares with the draft bridge. */
@@ -43,6 +44,13 @@ export interface DraftLinksInjected {
   readonly actionFor: (link: ReferenceLink) => (() => ReferenceOutcome | Promise<ReferenceOutcome>) | undefined
   /** The dock's own inspection verdicts: the bridge never re-asks for the same path. */
   readonly hooks: { readonly referenceInfo: ReferenceInfoSource }
+  /**
+   * Resolve a BARE `@label` to the one session it names, or undefined. A session
+   * mention carries no id once it is durable, so this is the only way a draft
+   * token can become a session link — and it answers undefined for an ambiguous
+   * or unknown label, so a name that also exists as a file is never hijacked.
+   */
+  readonly resolveSession?: SessionLabelResolver | undefined
 }
 
 /** Overlay entry props: the composer runtime face plus the opener and the verdicts. */
@@ -60,7 +68,7 @@ function caretOf(event: MouseEvent): { readonly node: Node; readonly offset: num
  * @param props - the injected opener and the dock's verdict source.
  * @returns nothing; this entry renders no DOM of its own.
  */
-export function DraftLinks({ actionFor, useReferenceInfo }: DraftLinksProps) {
+export function DraftLinks({ actionFor, useReferenceInfo, resolveSession }: DraftLinksProps) {
   const infos = useReferenceInfo(snapshot => snapshot.value)
   // Keyed by the canonical spelling (`referenceKey`): the Host answers an
   // out-of-workspace path with forward slashes while the draft may spell it with
@@ -73,10 +81,10 @@ export function DraftLinks({ actionFor, useReferenceInfo }: DraftLinksProps) {
   )
   // The face is re-created on every injection and every verdict lands as a new
   // array: hold it in a ref so the document listeners install ONCE per mount.
-  const face = useRef({ actionFor, verdict: (path: string) => verdictByPath.get(referenceKey(path)) })
+  const face = useRef({ actionFor, verdict: (path: string) => verdictByPath.get(referenceKey(path)), resolveSession })
   useEffect(() => {
-    face.current = { actionFor, verdict: (path: string) => verdictByPath.get(referenceKey(path)) }
-  }, [actionFor, verdictByPath])
+    face.current = { actionFor, verdict: (path: string) => verdictByPath.get(referenceKey(path)), resolveSession }
+  }, [actionFor, verdictByPath, resolveSession])
   /** Repaint on demand from outside the install effect (a verdict that arrived late). */
   const repaint = useRef(() => {})
 
@@ -89,12 +97,12 @@ export function DraftLinks({ actionFor, useReferenceInfo }: DraftLinksProps) {
         const end = reference.decoratedEnd
         if (end === undefined || reference.local >= end) return undefined
       }
-      return draftActivation(reference.token, face.current.actionFor, face.current.verdict)
+      return draftActivation(reference.token, face.current.actionFor, face.current.verdict, face.current.resolveSession)
     }
     const paint = (): void => {
       const verdict = (path: string): DraftVerdict | undefined => face.current.verdict(path)
       paintDraftLinks((token) => {
-        if (draftActivation(token.token, face.current.actionFor, verdict) !== undefined) return 'link'
+        if (draftActivation(token.token, face.current.actionFor, verdict, face.current.resolveSession) !== undefined) return 'link'
         // A reference whose target the Host reports as gone is drawn stale rather
         // than left as prose: the dock already says 已失效 for it. Only a FINISHED
         // token is judged, though — while one is still being typed, every prefix

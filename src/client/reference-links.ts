@@ -7,6 +7,7 @@
  * thin event adapter, and so the address grammar can be pinned against the
  * Harness's own implementation in the tests instead of being trusted by eye.
  */
+import { decodeSessionUri, wireSessionUri, type SessionLabelResolver } from './session-link.ts'
 
 /** One mention of an already sent message that a click can act on. */
 export type ReferenceLink =
@@ -16,6 +17,11 @@ export type ReferenceLink =
   | { readonly kind: 'skill'; readonly name: string }
   /** A seam provider's item; only that provider's own `open` knows what it means. */
   | { readonly kind: 'atlas'; readonly provider: string; readonly item: string }
+  /**
+   * A SESSION reference: selecting it switches the current session, which is a
+   * main-area navigation rather than a resource the Sidebar could show.
+   */
+  | { readonly kind: 'session'; readonly sessionId: string }
 
 /**
  * The mention forms our own `@` source emits that have nothing to open: a
@@ -33,15 +39,23 @@ const INERT_HANDLES: readonly string[] = ['plugin:']
  * `@atlas:provider/item`, `@[label](dsh-session:…)`, or an out-of-workspace
  * absolute path (`@E:\…` / `@E:/…`, whose drive letter is a path, not a handle).
  * Only a workspace file, a quoted path, an absolute path, a skill (whose source
- * the skill source opens) and a provider item (whose meaning belongs to that
- * provider) name something to act on. A trailing separator is a folder mention
- * (its chip kind is `folder`), and a colon in the first segment is our own handle
- * spelling unless it is a drive letter.
+ * the skill source opens), a provider item (whose meaning belongs to that
+ * provider) and a wire session mention (whose payload names its session) name
+ * something to act on. A trailing separator is a folder mention (its chip kind
+ * is `folder`), and a colon in the first segment is our own handle spelling
+ * unless it is a drive letter.
  * @param title - the chip's `title` attribute (the undecorated label).
  * @returns the mention, or undefined when there is nothing to open.
  */
 export function decodeReferenceLink(title: string | null | undefined): ReferenceLink | undefined {
   if (typeof title !== 'string' || !title.startsWith('@')) return undefined
+  // The WIRE session mention is the one form whose identity is in the text: the
+  // host folds it to a bare label before the message is durable, but a chip that
+  // still carries it names its session exactly, so it is decoded by value rather
+  // than by shape (a bare `@label` names nothing — only the draft's own resolver
+  // may promote one, and only on a unique match).
+  const session = decodeSessionUri(wireSessionUri(title))
+  if (session !== undefined) return { kind: 'session', sessionId: session }
   let label: string
   if (title.startsWith('@"')) {
     // A quoted path only ends at its closing quote; anything else is malformed
@@ -87,6 +101,12 @@ const DRIVE_LETTER = /^[a-z]:$/iu
  * decorates by syntax rather than by name: a trailing separator marks a folder
  * mention (`@src/`), whose chip kind is its own and whose click opens the
  * directory through the Host opener.
+ *
+ * A bare `@label` is deliberately left to the caller's
+ * `resolveSessions`: opening one as a session needs the live session list, and
+ * a token that names no session must still fall through to being a file path
+ * (`@docs` is a directory long before it is a session title). The wire session
+ * form needs no list, so it is decoded right here.
  * @param token - the activated token, trigger included (e.g. `@src/a.ts`).
  * @returns the mention, or undefined when nothing can be opened.
  */
@@ -96,6 +116,18 @@ export function decodeDraftReference(token: string): ReferenceLink | undefined {
   if (!token.startsWith('@') || token.length < 3) return undefined
   const trimmed = token.endsWith('/') || token.endsWith('\\') ? token.slice(1, -1) : undefined
   return trimmed === undefined || trimmed === '' ? undefined : { kind: 'folder', path: trimmed }
+}
+
+/**
+ * The session one DRAFT token names, when the token itself says so.
+ *
+ * Only the wire form answers here: a bare label needs {@link SessionLabelResolver}
+ * and the live list, which is the caller's business (see `draftActivation`).
+ * @param token - one draft token, `@` included.
+ * @returns the session id to switch to, or undefined when the token carries none.
+ */
+export function draftSessionId(token: string): string | undefined {
+  return decodeSessionUri(wireSessionUri(token))
 }
 
 /** The scheme and type every file resource address opens with. */

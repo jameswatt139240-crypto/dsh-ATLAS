@@ -33,8 +33,7 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = false
  * first token and the whole of the second, while the third line was typed by
  * hand and never decorated at all.
  */
-const COMPOSER = '<div data-composer-card><div data-lexical-editor="true" contenteditable="true">'
-  + '<p><span data-lexical-text="true">看 </span>'
+const COMPOSER = '<div data-composer-card><div data-lexical-editor="true" contenteditable="true">'  + '<p><span data-lexical-text="true">看 </span>'
   + '<span data-lexical-text="true" data-composer-text-ref>@atlas:git/</span>'
   + '<span data-lexical-text="true">.dsh-atlas-git-smoke.md</span>'
   + '<span data-lexical-text="true"> 和 </span>'
@@ -45,6 +44,10 @@ const COMPOSER = '<div data-composer-card><div data-lexical-editor="true" conten
 
 /** Mounted bridges still alive, unmounted after every test (they observe body). */
 const liveRoots = new Set<Root>()
+
+/** The live session reference, spelled exactly as the Harness wrote it into the log. */
+const SESSION_ID = 'session-syw-v016-0001'
+const WIRE_SESSION = `@[${SESSION_ID}](dsh-session:InNlc3Npb24tc3l3LXYwMTYtMDAwMSI)`
 
 /** The caret stub installed by {@link stubCaret}. */
 let restoreCaret: (() => void) | undefined
@@ -260,6 +263,48 @@ describe('draftActivation', () => {
     // offered as soon as that owner declares an `open`.
     expect(draftActivation('@atlas:git/x.ts', () => open, () => undefined)?.link)
       .toEqual({ kind: 'atlas', provider: 'git', item: 'x.ts' })
+  })
+
+  it('opens a session from the wire form with no session list involved', () => {
+    const asked: string[] = []
+    const activation = draftActivation(
+      WIRE_SESSION,
+      () => open,
+      () => ({ exists: true }),
+      label => { asked.push(label); return undefined },
+    )
+    expect(activation?.link).toEqual({ kind: 'session', sessionId: SESSION_ID })
+    expect(activation?.run()).toBe('opened')
+    // The token names its own session, so the list is never consulted.
+    expect(asked).toEqual([])
+  })
+
+  it('promotes a bare label only on the injected session answer', () => {
+    // Without a resolver a bare token keeps the rules it always had, so a name
+    // the Host confirms as a path stays a file reference — the session face
+    // never widens what a token may open, it only answers for its own names.
+    expect(draftActivation(`@${SESSION_ID}`, () => open, () => ({ exists: true }))?.link)
+      .toEqual({ kind: 'file', path: SESSION_ID })
+    // With a resolver, the label the session list matched becomes a session link
+    // and the path rules are not consulted at all.
+    const asked: string[] = []
+    const activation = draftActivation(
+      `@${SESSION_ID}`,
+      () => open,
+      () => undefined,
+      label => { asked.push(label); return label === SESSION_ID ? SESSION_ID : undefined },
+    )
+    expect(activation?.link).toEqual({ kind: 'session', sessionId: SESSION_ID })
+    expect(activation?.run()).toBe('opened')
+    expect(asked).toEqual([SESSION_ID])
+  })
+
+  it('never lets a session answer hijack a workspace path', () => {
+    // A label that also names a real file is offered as the FILE: the resolver
+    // must have already refused it (that is the resolver's uniqueness rule), so
+    // this pins the ordering — a Host-confirmed path is never overruled.
+    const activation = draftActivation('@AGENTS.md', () => open, () => ({ exists: true }), () => undefined)
+    expect(activation?.link).toEqual({ kind: 'file', path: 'AGENTS.md' })
   })
 })
 

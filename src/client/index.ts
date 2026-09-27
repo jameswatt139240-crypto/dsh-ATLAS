@@ -353,6 +353,46 @@ export function apply(ctx: ClientContext): void {
   // Relative → entry map backing the dock's open action (resolves a draft
   // token to its absolute path from the last settled index).
   const entryByRel = new Map<string, FileEntry>()
+
+  /**
+   * Resolve a BARE `@label` to the one session it names.
+   *
+   * A session mention is folded to a bare label before it is durable (the host's
+   * `parseSessionReferenceText` does it), and the composer keeps the wire form as
+   * plain text, so the label is often all that is left. Two answers only:
+   * a label that IS a listed session id, or a label that equals exactly ONE
+   * session's display title. Anything else answers undefined, because a name that
+   * also exists as a workspace path (`@AGENTS.md`) must stay the file reference
+   * the user wrote — the plugin never turns a path into a jump on a guess.
+   */
+  const resolveSessionLabel = (label: string): string | undefined => {
+    const snapshot = sessions.list.getSnapshot()
+    const ids = snapshot.ids
+    if ((ids as readonly string[]).includes(label)) return label
+    const hits = ids.filter(id => snapshot.byId[id]?.displayTitle === label)
+    // `SessionId` is a branded string with no runtime brand, so the id the wire
+    // names is the same value the list is keyed by.
+    return hits.length === 1 ? String(hits[0]) : undefined
+  }
+
+  /**
+   * Switch the current session to one a mention names.
+   *
+   * This is main-area navigation, not a resource the Sidebar can show, so it
+   * reuses the service the sidebar's own rows use — the selection, its routing,
+   * and its persistence all follow. A session that is no longer listed fails
+   * loud inside `select()`; that is reported as a vanished reference rather than
+   * thrown at the user.
+   */
+  const openSession = (sessionId: string): ReferenceOutcome => {
+    try {
+      sessions.open(sessionId as SessionId)
+      return 'opened'
+    } catch (error) {
+      console.warn(`[dsh-atlas] this session reference could not be opened: ${sessionId}`, error)
+      return 'gone'
+    }
+  }
   /**
    * Host verdicts for the draft's scope tokens, keyed `sessionId\0path`. Bounded
    * because it only ever holds the handful of paths a user types a scope from.
@@ -716,6 +756,12 @@ export function apply(ctx: ClientContext): void {
         return 'opened'
       }
     }
+    if (link.kind === 'session') {
+      // Only the wire form names its session outright; a bare label never gets
+      // here (the draft resolves one through `resolveSessionLabel` first, and a
+      // sent bubble does not promote labels at all).
+      return () => openSession(link.sessionId)
+    }
     if (link.kind === 'atlas') {
       const open = atlasRegistry.get(link.provider)?.provider.open
       if (open === undefined) return undefined
@@ -861,6 +907,7 @@ export function apply(ctx: ClientContext): void {
     inject: (sessionId): DraftLinksInjected => ({
       actionFor: link => actionFor(sessionId, link),
       hooks: { referenceInfo },
+      resolveSession: resolveSessionLabel,
     }),
   }, DraftLinks))
 
