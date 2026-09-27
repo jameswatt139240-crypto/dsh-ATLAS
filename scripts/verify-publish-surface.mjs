@@ -150,15 +150,19 @@ if (PLUGIN_DESCRIPTION !== pkg.description) {
 }
 
 /**
- * The masthead of a README: the `**@ Last, All Sources.**` label, the tagline line
+ * The masthead of a README: the `**AT Last, All Sources.**` label, the tagline line
  * directly under it, and the intro line under that, with Markdown emphasis
  * stripped. The approved masthead is exactly this shape - label, tagline, intro -
  * in both languages, so each part is addressable.
+ *
+ * The older `@ Last, All Sources.` spelling is accepted for the LABEL only, so this
+ * gate reports a stale tagline rather than "no masthead found" when someone reverts
+ * half of the rename.
  */
 function mastheadOf(file) {
   const lines = readFileSync(file, 'utf8').split('\n')
-  const start = lines.findIndex(line => line.startsWith('**@ Last, All Sources.**'))
-  if (start < 0) throw new Error(`${file}: no "@ Last, All Sources." masthead found`)
+  const start = lines.findIndex(line => /^\*\*[@]?AT Last, All Sources\.\*\*/u.test(line))
+  if (start < 0) throw new Error(`${file}: no "AT Last, All Sources." masthead found`)
   return {
     all: lines.slice(start, start + 5).filter(line => line.trim() !== '').join('\n').replaceAll('*', '').replaceAll('`', ''),
     /** The tagline line itself, which must BE the approved sentence. */

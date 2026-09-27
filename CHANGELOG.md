@@ -17,6 +17,15 @@
   README 的全部承诺**，而图的文案就是审批过的那句（用 `click` 而非 `clickable`）；把要求写死到"哪一类面必须说什么"，
   比把检查放松更有意义。
 
+## [1.0.9] - 2026-09-27
+
+### 文档
+
+- **标签改为 `AT Last, All Sources.`**（原 `@ Last, All Sources.`）：两个 README、`package.json` 与 `dsh.plugin.json`
+  的 `description`、配图 `aria-label` 与图内那行字全部同步。用户名形近 `@`，`AT` 才是产品名的起首两字母。
+- **词标 `ATLAS` 的起首字母标色**：图里标题的 `<tspan>` 由 `dsh-`（灰 `#77839b`）+ **`AT`（品牌蓝 `#bcd2ff`）**
+  + `LAS`（近白 `#eef1f7`）组成。实测 70 / 43 / 61 = 173 px，整词与 tagline 都在卡片内（tagRight 338 / 880）。
+
 ## [1.0.8] - 2026-09-27
 
 ### 文档

@@ -6,7 +6,7 @@ A **Side Quest** project (工作室：支线任务, **Side Quest Labs**) — npm
 
 <img src="assets/diagrams/atlas-overview.svg" alt="dsh-ATLAS: one @ trigger, five built-in categories plus the bundled git category, and a category any plugin can register" width="880">
 
-**@ Last, All Sources.**
+**AT Last, All Sources.**
 
 One `@` . Jump anywhere.
 

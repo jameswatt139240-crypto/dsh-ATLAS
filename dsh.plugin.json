@@ -1,7 +1,7 @@
 {
   "name": "@sidequest-007/dsh-atlas",
-  "description": "@ Last, All Sources. One @ . Jump anywhere.",
-  "version": "1.0.8",
+  "description": "AT Last, All Sources. One @ . Jump anywhere.",
+  "version": "1.0.9",
   "entry": {
     "name": "@sidequest-007/dsh-atlas",
     "inject": []

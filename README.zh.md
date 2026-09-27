@@ -6,7 +6,7 @@
 
 <img src="assets/diagrams/atlas-overview.svg" alt="dsh-ATLAS：一个 @ 触发位、五个内置类别加内置的 git 类别，以及任何插件都能注册的自己的类别" width="880">
 
-**@ Last, All Sources.**
+**AT Last, All Sources.**
 
 **一 @ 即达。**
 
