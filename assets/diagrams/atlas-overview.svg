@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="880" height="300" viewBox="0 0 880 300" role="img" aria-label="dsh-ATLAS: one @ trigger, five built-in categories with their glyphs, plus any plugin's own category">
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="300" viewBox="0 0 880 300" role="img" aria-label="dsh-ATLAS: one @ trigger, five built-in categories plus the bundled git category with their glyphs, and any plugin's own category; one click names the session it points at">
   <rect x="0" y="0" width="880" height="300" rx="18" fill="#0f1420"/>
   <rect x="0.5" y="0.5" width="879" height="299" rx="17.5" fill="none" stroke="#26304a"/>
 
