@@ -35,6 +35,12 @@ interface BootOptions {
   sessionList?: { ids: readonly string[]; byId: Record<string, { displayTitle: string }> }
   /** How `ctx.sessions.open` answers; the default records the call. */
   openSession?: (sessionId: string) => void
+  /**
+   * One service name whose read must THROW, the way cordis answers a service this
+   * plugin never declared in `inject`. That is how a profile with no right Sidebar
+   * behaves, and it is the branch every optional read exists for.
+   */
+  mountThrowingService?: string
 }
 
 /** Boot the plugin body over a stub-service context and return the recorded surfaces. */
@@ -98,6 +104,15 @@ async function boot(options: BootOptions = {}) {
     list: { getSnapshot: () => ({ ids: sessionList.ids, byId: sessionList.byId }) },
     open: openSessionSpy,
   })
+  if (options.mountThrowingService !== undefined) {
+    // A service this plugin never declared in `inject` is not readable through the
+    // cordis context proxy: the read throws. Install exactly that, so a missing
+    // right Sidebar is reproduced instead of merely absent.
+    Object.defineProperty(ctx, options.mountThrowingService, {
+      configurable: true,
+      get() { throw new Error(`cannot get property "${options.mountThrowingService}" without inject`) },
+    })
+  }
   apply(ctx as unknown as Parameters<typeof apply>[0])
   // The Remote mount effect is asynchronous; settle one tick.
   await Promise.resolve()
@@ -542,6 +557,24 @@ describe('dsh-atlas client apply', () => {
     expect(booted.openReference).not.toHaveBeenCalled()
   })
 
+  it('routes a session mention to the session service at the composition level', async () => {
+    // The pure session rules live in their own spec; this pins the WIRING: a wire
+    // mention reaching the real action lookup must switch sessions and must not
+    // consult the Host about a path (a path question for a session payload is what
+    // used to answer with a nonexistent file).
+    const booted = await boot({
+      sessionList: { ids: ['session-other'], byId: { 'session-other': { displayTitle: 'Other run' } } },
+    })
+    const bridge = draftBridge(booted)
+    const face = bridge.inject('s1')
+    face.actionFor({ kind: 'session', sessionId: 'session-other' })?.()
+    expect(booted.openSessionSpy).toHaveBeenCalledWith('session-other')
+    // The draft's own resolver is wired too, and it reads the list it was given.
+    expect(face.resolveSession?.('session-other')).toBe('session-other')
+    expect(face.resolveSession?.('Other run')).toBe('session-other')
+    expect(face.resolveSession?.('not-a-session')).toBeUndefined()
+  })
+
   it('switches to the session a wire mention names', async () => {
     const booted = await boot()
     const bridge = draftBridge(booted)
@@ -824,6 +857,31 @@ describe('dsh-atlas client apply', () => {
     dockOf(booted).inject('s1').onOpen({ kind: 'folder', path: 'src' })
     await settle()
     expect(openResource).toHaveBeenCalledWith('dsh-resource://folder/src')
+  })
+
+  it('still opens a folder in a profile that mounts NO Sidebar at all', async () => {
+    // The documented requirement: `@` must work where the Sidebar does not exist.
+    // Reading an undeclared cordis service THROWS, so without the optional-read
+    // helper this click would throw instead of falling back to the OS opener.
+    const booted = await boot({
+      atFileSearch: async () => ({ ok: true as const, value: [{ path: '/ws/src', relative: 'src', kind: 'dir' }] }),
+      mountThrowingService: 'sidebarRight',
+    })
+    await registered(booted).candidates(s1, { query: '', position: 'leading', signal: signal() })
+    await settle()
+    // No `sidebarRight` is provided anywhere: the read must degrade, not throw, and
+    // the local opener that ran first stays the effective action.
+    expect(() => dockOf(booted).inject('s1').onOpen({ kind: 'folder', path: 'src' })).not.toThrow()
+    await settle()
+    expect(booted.openPath).toHaveBeenCalledWith({ path: '/ws/src' })
+  })
+
+  it('opens a folder with the local opener when only the TAB registry is missing', async () => {
+    // The second optional service on this path: `sidebarRightTabs` carries the
+    // folder-tab registration. A profile with the Sidebar but no tab registry must
+    // still finish the click, with the plugin's own tab simply not registered.
+    const booted = await boot({ mountThrowingService: 'sidebarRightTabs' })
+    expect(booted.ctx.get('sidebarRightTabs')).toBeUndefined()
   })
 
   it('honours the folder-open setting: sidebar only, or local only', async () => {
