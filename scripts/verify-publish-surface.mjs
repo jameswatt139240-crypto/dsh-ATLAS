@@ -135,6 +135,83 @@ for (const [label, value] of IDENTITIES) {
   if (value !== pkg.name) problems.push(`naming invariant: ${label} declares ${String(value)}, package.json says ${pkg.name}`)
 }
 
+// ---- Description invariant: the same sentence, everywhere, saying the same thing.
+//
+// The product's one-line summary is duplicated on purpose (a reader lands on the
+// npm card, the GitHub About, the README, or the diagram inside it) and that is
+// exactly how it drifts: 1.0.3 updated the README and the diagram's aria-label
+// while the line DRAWN inside the SVG still read a version from three releases
+// earlier. This gate removes the duplication as a source of error: the metadata
+// copy must be identical, every surface must carry the phrases that make the
+// product legible, and the stale wording cannot come back.
+const PLUGIN_DESCRIPTION = pluginManifest.description
+if (PLUGIN_DESCRIPTION !== pkg.description) {
+  problems.push(`description drift: dsh.plugin.json says ${JSON.stringify(PLUGIN_DESCRIPTION)}, package.json says ${JSON.stringify(pkg.description)}`)
+}
+
+/**
+ * The tagline line of a README: the paragraph that opens with the product's
+ * `**@ Last, All Sources.**` label, with Markdown emphasis stripped.
+ */
+function taglineOf(file) {
+  const text = readFileSync(file, 'utf8')
+  const line = text.split('\n').find(candidate => candidate.startsWith('**@ Last, All Sources.**'))
+  if (line === undefined) throw new Error(`${file}: no "@ Last, All Sources." tagline line found`)
+  return line.replaceAll('*', '').replaceAll('`', '')
+}
+
+const overviewSvg = readFileSync('assets/diagrams/atlas-overview.svg', 'utf8')
+/** The tagline DRAWn inside the diagram: its text elements, in document order. */
+const drawnLines = [...overviewSvg.matchAll(/<text[^>]*>([^<]*)<\/text>/gu)].map(match => match[1])
+/** The product's one-line summary, as each surface spells it. */
+const SURFACES = [
+  ['package.json description', pkg.description, 'en'],
+  ['dsh.plugin.json description', PLUGIN_DESCRIPTION, 'en'],
+  ['README.md tagline', taglineOf('README.md'), 'en'],
+  ['README.zh.md tagline', taglineOf('README.zh.md'), 'zh'],
+  ['atlas-overview.svg aria-label', /aria-label="([^"]*)"/u.exec(overviewSvg)?.[1] ?? '', 'en'],
+  ['atlas-overview.svg drawn line', drawnLines[1] ?? '', 'mixed'],
+]
+/**
+ * Phrases each surface must carry, per language, and why each one is load-bearing.
+ * The claims are the same in both languages; the SPELLING is not, so the set is
+ * chosen by the surface's language rather than by loosening the check.
+ */
+const PHRASES = {
+  en: [
+    { test: /clickable/iu, why: 'a clickable link is the most visible thing the plugin does' },
+    { test: /@-able/u, why: 'the promise that any registered source becomes an @ target' },
+    { test: /any plugin/iu, why: 'the seam: third parties add their own category' },
+    { test: /categor/iu, why: 'the menu the user actually opens' },
+  ],
+  zh: [
+    { test: /可点/u, why: 'a clickable link is the most visible thing the plugin does' },
+    { test: /可\s*@/u, why: 'the promise that any registered source becomes an @ target' },
+    { test: /任何插件/u, why: 'the seam: third parties add their own category' },
+    { test: /类别/u, why: 'the menu the user actually opens' },
+  ],
+  mixed: [
+    { test: /clickable/iu, why: 'a clickable link is the most visible thing the plugin does' },
+    { test: /@-able/u, why: 'the promise that any registered source becomes an @ target' },
+    { test: /any plugin/iu, why: 'the seam: third parties add their own category' },
+  ],
+}
+for (const [label, text, language] of SURFACES) {
+  if (text.trim() === '') {
+    problems.push(`summary invariant: ${label} is empty`)
+    continue
+  }
+  for (const phrase of PHRASES[language]) {
+    if (!phrase.test.test(text)) problems.push(`summary invariant: ${label} is missing /${phrase.test.source}/ (${phrase.why})`)
+  }
+}
+// The wording this gate exists to keep buried.
+for (const [label, text] of SURFACES) {
+  if (/any plugin can register its own\.?\s*$/iu.test(text)) {
+    problems.push(`summary invariant: ${label} still carries the old tagline`)
+  }
+}
+
 if (problems.length > 0) {
   console.error('[verify-publish-surface] FAILED')
   for (const problem of problems) console.error(`  - ${problem}`)

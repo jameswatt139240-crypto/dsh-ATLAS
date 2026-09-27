@@ -2,6 +2,27 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 的组织方式，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.0.5] - 2026-09-27
+
+### 文档
+
+- **tagline 改成"可注册 → 可 @、可点、可跳转"的因果句式**（去掉了与 `@ Last, All Sources` 重复的"一个 @，所有来源"）：
+  中英 README、`package.json` / `dsh.plugin.json` 的 `description`（npm 卡片）、配图的 `aria-label` 与**图内那行字**全部同步：
+  *any plugin can register its own · Atlas makes it `@`-able, clickable, jumpable*。
+- **新增"摘要一致性"门禁**（`scripts/verify-publish-surface.mjs`）：六处摘要（两个 `description`、两个 README tagline、
+  SVG 的 aria-label 与**图内文字**）都必须命中语言对应的关键承诺（en: `clickable`/`@-able`/`any plugin`/`categor`；
+  zh: `可点`/`可 @`/`任何插件`/`类别`），且 `dsh.plugin.json` 的 `description` 必须与 `package.json` **逐字相同**，
+  同时**禁止旧文案回归**（`…can register its own.` 结尾会直接判红）。这条门禁正是为了修掉本轮暴露的真问题：
+  1.0.3 改了 README 与 aria-label，**图里画的那行却还是三个版本前的旧句**。
+  （反向验证：把旧文案塞进受检面 ⇒ 门禁点名 `still carries the old tagline`。）
+
+### 修复
+
+- **修回配图的字符编码**：本轮我在做失败的反向验证时，有一处恢复用了 PowerShell 的 `Set-Content`/`Copy-Item`，
+  把 UTF-8 当 ANSI 读写，导致 `—`、`·` 变成 `鈥?` 与 `路`（截图里表现为 `⍰`）。已用 node 做**字节级修复**
+  并逐行 diff 确认：与 1.0.4 相比**只差预期的两行**（aria-label 与图内 tagline），无其他改动。
+  教训与仓库既有纪律一致：**文本文件只用 read/edit/write 工具，绝不经 PowerShell 重写**。
+
 ## [1.0.4] - 2026-09-27
 
 ### 文档
