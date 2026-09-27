@@ -43,7 +43,10 @@ jobs:
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
-          package-manager-cache: false
+          # `cache: ''` is how setup-node spells "no package-manager cache"; the
+          # previous `package-manager-cache: false` was not a valid input and made
+          # every run print an "Unexpected input(s)" warning (observed live).
+          cache: ''
       # Trusted publishing needs npm >= 11.5.1. Pin the MAJOR: `npm@latest` is now
       # npm 12, which requires a newer Node than the runner's and changes
       # `npm pack --json` enough to break the gate below (observed live: the gate died

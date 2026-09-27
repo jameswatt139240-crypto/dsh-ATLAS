@@ -2,6 +2,20 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 的组织方式，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.0.3] - 2026-09-27
+
+### 文档
+
+- **tagline 明确写出「可点链接」**：此前只写"一次点击，直达会话"，没把最直观的那件事说出来 —— **`@` 画出的每个引用都是可点的链接**
+  （用主题的链接色，暗色下即蓝 + 悬停虚下划线）。现在 README（中英）、`package.json` 与 `dsh.plugin.json` 的 `description`
+  （**npm 卡片上显示的就是这一条**）、配图 `aria-label`，以及 **GitHub 仓库的 About 摘要**四处一致：
+  *One @, every source; every reference is a clickable link, and a session link jumps to that session.*
+
+### 修复
+
+- **`release.yml` 去掉无效输入**：`actions/setup-node@v4` 的 `package-manager-cache: false` 不是合法输入，
+  每次发布都会打印 `##[warning]Unexpected input(s) 'package-manager-cache'`；改为合法写法 `cache: ''`（表示不缓存包管理器）。
+
 ## [1.0.2] - 2026-09-27
 
 ### 修复
