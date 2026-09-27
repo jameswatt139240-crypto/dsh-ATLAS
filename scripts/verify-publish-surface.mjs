@@ -150,86 +150,126 @@ if (PLUGIN_DESCRIPTION !== pkg.description) {
 }
 
 /**
- * The tagline line of a README: the paragraph that opens with the product's
- * `**@ Last, All Sources.**` label, with Markdown emphasis stripped.
+ * The masthead of a README: the `**@ Last, All Sources.**` label, the tagline line
+ * directly under it, and the intro line under that, with Markdown emphasis
+ * stripped. The approved masthead is exactly this shape - label, tagline, intro -
+ * in both languages, so each part is addressable.
  */
-function taglineOf(file) {
-  const text = readFileSync(file, 'utf8')
-  const line = text.split('\n').find(candidate => candidate.startsWith('**@ Last, All Sources.**'))
-  if (line === undefined) throw new Error(`${file}: no "@ Last, All Sources." tagline line found`)
-  return line.replaceAll('*', '').replaceAll('`', '')
+function mastheadOf(file) {
+  const lines = readFileSync(file, 'utf8').split('\n')
+  const start = lines.findIndex(line => line.startsWith('**@ Last, All Sources.**'))
+  if (start < 0) throw new Error(`${file}: no "@ Last, All Sources." masthead found`)
+  return {
+    all: lines.slice(start, start + 5).filter(line => line.trim() !== '').join('\n').replaceAll('*', '').replaceAll('`', ''),
+    /** The tagline line itself, which must BE the approved sentence. */
+    tagline: lines
+      .slice(start + 1, start + 4)
+      .map(line => line.trim())
+      .find(line => line !== '')
+      ?.replaceAll('*', '').replaceAll('`', '') ?? '',
+  }
 }
 
+/** The Chinese brand line, which rides in both READMEs' mastheads. */
+const BRAND_LINE = '一 @ 即达'
+
 const overviewSvg = readFileSync('assets/diagrams/atlas-overview.svg', 'utf8')
-/** The tagline DRAWn inside the diagram: its text elements, in document order. */
-const drawnLines = [...overviewSvg.matchAll(/<text[^>]*>([^<]*)<\/text>/gu)].map(match => match[1])
+/**
+ * The tagline DRAWn inside the diagram. Found by CONTENT rather than by index: the
+ * wordmark is drawn as `<tspan>` runs, so a naive "second text element" would pick
+ * up a tspan instead of the tagline.
+ */
+const drawnLine = [...overviewSvg.matchAll(/<text[^>]*>([^<]*)<\/text>/gu)]
+  .map(match => match[1])
+  .find(text => text.includes('All Sources')) ?? ''
+const readmeEn = mastheadOf('README.md')
+const readmeZh = mastheadOf('README.zh.md')
 /** The product's one-line summary, as each surface spells it. */
 const SURFACES = [
   ['package.json description', pkg.description, 'meta'],
   ['dsh.plugin.json description', PLUGIN_DESCRIPTION, 'meta'],
-  ['README.md tagline', taglineOf('README.md'), 'en'],
-  ['README.zh.md tagline', taglineOf('README.zh.md'), 'zh'],
-  ['atlas-overview.svg aria-label', /aria-label="([^"]*)"/u.exec(overviewSvg)?.[1] ?? '', 'art'],
-  ['atlas-overview.svg drawn line', drawnLines[1] ?? '', 'art'],
+  ['README.md masthead', readmeEn.all, 'en', 'clean'],
+  ['README.zh.md masthead', readmeZh.all, 'zh'],
+  ['atlas-overview.svg aria-label', /aria-label="([^"]*)"/u.exec(overviewSvg)?.[1] ?? '', 'art', 'clean'],
+  ['atlas-overview.svg drawn line', drawnLine, 'art', 'clean'],
 ]
 /**
- * Phrases each surface must carry, keyed by the SURFACE KIND rather than by one
- * loosened list. The product is bilingual but a surface never mixes, and the short
- * metadata line physically cannot carry every claim the README does - so the
- * metadata set is the promise, while the README/diagram sets add the visible
- * affordances ("clickable", "可点", the session jump).
+ * The approved tagline, asserted on the tagline LINE itself: the label above it and
+ * the intro below it are different sentences, so a whole-masthead `includes` would
+ * pass even if the tagline line had been replaced.
+ */
+const TAGLINES = [
+  ['README.md masthead', readmeEn.tagline, 'One @ . Jump anywhere.'],
+  ['README.zh.md masthead', readmeZh.tagline, '一 @ 即达。'],
+]
+/**
+ * Phrases each surface must carry, keyed by the SURFACE KIND. The product is
+ * bilingual but a surface never mixes the two languages; the short metadata line
+ * physically cannot carry every claim the README does, so each kind states what
+ * THAT kind of surface must promise.
  * @type {Record<string, readonly { test: RegExp, why: string }[]>}
  */
 const PHRASES = {
   meta: [
-    { test: /any plugin/iu, why: 'the seam: third parties register their own source' },
-    { test: /Atlas/iu, why: 'the name the tagline hangs the promise on' },
-    { test: /click/iu, why: 'you @ it, click it, jump' },
-    { test: /jump/iu, why: 'a session link navigates, the newest thing it does' },
+    { test: /jump anywhere/iu, why: 'the promise itself, spelled the approved way' },
   ],
   en: [
+    { test: /jump anywhere/iu, why: 'the promise itself, spelled the approved way' },
     { test: /clickable/iu, why: 'a clickable link is the most visible thing the plugin does' },
-    { test: /any plugin/iu, why: 'the seam: third parties register their own source' },
-    { test: /click/iu, why: 'you @ it, click it, jump' },
-    { test: /jump/iu, why: 'a session link navigates, the newest thing it does' },
-    { test: /Atlas/iu, why: 'the name the tagline hangs the promise on' },
   ],
   /**
-   * The artwork: both its spoken label and the line drawn inside it. The drawn
-   * line IS the approved tagline, so it carries the promise ("click") rather than
-   * the adjective the README adds in prose ("clickable").
+   * The artwork: the spoken label and the line drawn inside it. The drawn line IS
+   * the approved tagline, so this kind carries the promise rather than the prose.
    */
   art: [
-    { test: /any plugin/iu, why: 'the seam: third parties register their own source' },
-    { test: /Atlas/iu, why: 'the name the tagline hangs the promise on' },
-    { test: /click/iu, why: 'you @ it, click it, jump' },
-    { test: /jump/iu, why: 'a session link navigates, the newest thing it does' },
+    { test: /jump anywhere/iu, why: 'the promise itself, spelled the approved way' },
   ],
   zh: [
+    { test: /任何插件/u, why: 'the seam: third parties register their own category' },
+    { test: /其余交给\s*Atlas/u, why: 'what the tagline delegates to the plugin' },
     { test: /可点/u, why: 'a clickable link is the most visible thing the plugin does' },
-    { test: /任何插件/u, why: 'the seam: third parties register their own source' },
-    { test: /@/u, why: 'the trigger is the whole product' },
     { test: /跳/u, why: 'a session link navigates, the newest thing it does' },
-    { test: /Atlas/u, why: 'the name the tagline hangs the promise on' },
+    { test: /@/u, why: 'the trigger is the whole product' },
   ],
 }
 /** Wording that was deliberately retired and must not come back. */
 const RETIRED = [
   { test: /@-able/u, why: 'the hyphenated compound was dropped for being hard to read' },
+  { test: /Atlas does the rest/iu, why: 'replaced by the shorter "One @ . Jump anywhere." masthead' },
 ]
-for (const [label, text, kind] of SURFACES) {
-  if (text.trim() === '') {
+/**
+ * The Chinese brand line is EXPECTED in the Chinese masthead and merely tolerated
+ * in the English one (it is the same brand line, asserted by {@link TAGLINES}); any
+ * other Han character in an English surface is a real mix-up.
+ */
+const HAN = /\p{Script=Han}/gu
+const BRAND_HAN = new Set([...BRAND_LINE.replaceAll(' ', '')])
+for (const [label, text, kind, hanRule] of SURFACES) {
+  // The Chinese phrases are looked for with the brand line removed, or a line that
+  // is mostly Han would satisfy them by itself.
+  const checked = hanRule === 'exempt-brand' ? text.replace(BRAND_LINE, '') : text
+  if (checked.trim() === '') {
     problems.push(`summary invariant: ${label} is empty`)
     continue
   }
   for (const phrase of PHRASES[kind]) {
-    if (!phrase.test.test(text)) problems.push(`summary invariant: ${label} is missing /${phrase.test.source}/ (${phrase.why})`)
+    if (!phrase.test.test(checked)) problems.push(`summary invariant: ${label} is missing /${phrase.test.source}/ (${phrase.why})`)
   }
   for (const retired of RETIRED) {
-    if (retired.test.test(text)) problems.push(`summary invariant: ${label} carries retired wording /${retired.test.source}/ (${retired.why})`)
+    if (retired.test.test(checked)) problems.push(`summary invariant: ${label} carries retired wording /${retired.test.source}/ (${retired.why})`)
   }
-  if (/any plugin can register its own\.?\s*$/iu.test(text)) {
+  // `hanRule === 'clean'` means "this surface is entirely English": the only Han
+  // characters it may contain are the brand line's own.
+  if (hanRule === 'clean' && (checked.match(HAN) ?? []).some(char => !BRAND_HAN.has(char))) {
+    problems.push(`summary invariant: ${label} mixes Han characters into a non-Chinese surface`)
+  }
+  if (/any plugin can register its own\.?\s*$/iu.test(checked)) {
     problems.push(`summary invariant: ${label} still carries an older tagline`)
+  }
+}
+for (const [label, actual, expected] of TAGLINES) {
+  if (actual !== expected) {
+    problems.push(`summary invariant: ${label} tagline is ${JSON.stringify(actual)}, expected ${JSON.stringify(expected)}`)
   }
 }
 

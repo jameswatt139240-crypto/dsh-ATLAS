@@ -1,7 +1,7 @@
 {
   "name": "@sidequest-007/dsh-atlas",
-  "description": "@ Last, All Sources. One @, every source - any plugin registers; Atlas does the rest; you just @ it, click it, then jump anywhere.",
-  "version": "1.0.7",
+  "description": "@ Last, All Sources. One @ . Jump anywhere.",
+  "version": "1.0.8",
   "license": "MIT",
   "author": "Side Quest Labs",
   "publishConfig": {

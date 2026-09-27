@@ -1,9 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="880" height="300" viewBox="0 0 880 300" role="img" aria-label="dsh-ATLAS: one @ trigger, five built-in categories plus the bundled git category with their glyphs, and any plugin's own category; any plugin registers, Atlas does the rest, and you just @ it, click it, then jump anywhere">
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="300" viewBox="0 0 880 300" role="img" aria-label="dsh-ATLAS: one @ trigger, five built-in categories plus the bundled git category with their glyphs, and any plugin's own category; Atlas turns any of it into one @, and you jump anywhere">
   <rect x="0" y="0" width="880" height="300" rx="18" fill="#0f1420"/>
   <rect x="0.5" y="0.5" width="879" height="299" rx="17.5" fill="none" stroke="#26304a"/>
 
-  <text x="40" y="68" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif" font-size="34" font-weight="700" fill="#eef1f7">dsh-ATLAS</text>
-  <text x="40" y="98" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif" font-size="15" fill="#8f9bb3" textLength="798" lengthAdjust="spacingAndGlyphs">@ Last, All Sources — any plugin registers; Atlas does the rest · you just @ it, click it, then jump anywhere.</text>
+  <text x="40" y="68" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif" font-size="34" font-weight="700" fill="#eef1f7"><tspan fill="#77839b">dsh-</tspan><tspan fill="#bcd2ff">A</tspan><tspan fill="#eef1f7">TLAS</tspan></text>
+  <text x="40" y="98" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif" font-size="15" fill="#8f9bb3">@ Last, All Sources. One @ . Jump anywhere.</text>
 
   <g font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif" font-size="14">
     <rect x="40" y="122" width="81" height="36" rx="10" fill="#182036" stroke="#2b3450"/>
