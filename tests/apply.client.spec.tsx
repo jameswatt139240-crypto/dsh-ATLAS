@@ -553,6 +553,24 @@ describe('dsh-atlas client apply', () => {
   })
 
 
+  it('asks for no inspection when the draft names nothing, and reports a refusal', async () => {
+    const inspect = vi.fn(async () => ({ ok: false as const, error: { code: 'boom', message: 'down', details: {} } }))
+    const booted = await boot({ atFileInspect: inspect as never })
+    const dock = booted.slotsRegister.mock.calls.find(call => call[0]?.name === 'conversation.input.dock')?.[0] as {
+      inject: (sessionId: string) => { requestInspect: (targets: readonly string[]) => void }
+    }
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    // An empty target list settles to "no costs" without a round trip at all.
+    dock.inject('s1').requestInspect([])
+    await settle()
+    expect(inspect).not.toHaveBeenCalled()
+    // A refused inspection is reported once and leaves the dock without badges.
+    dock.inject('s1').requestInspect(['a.ts'])
+    await settle()
+    expect(error).toHaveBeenCalledWith('[dsh-atlas] reference inspection failed:', expect.any(Error))
+    error.mockRestore()
+  })
+
   it('skips reference inspection when the mounted face has no inspect method', async () => {
     const booted = await boot()
     const dock = booted.slotsRegister.mock.calls.find(call => call[0]?.name === 'conversation.input.dock')?.[0] as {
@@ -1371,6 +1389,34 @@ describe('dsh-atlas folder scoping from the composer', () => {
     } finally {
       document.body.innerHTML = ''
     }
+  })
+})
+
+describe('dsh-atlas soft failures', () => {
+  it('keeps the folder view when the external ledger refuses', async () => {
+    const booted = await boot({
+      atFileExternal: async () => ({ ok: false as const, error: { code: 'boom', message: 'down', details: {} } }),
+      atFileSearch: async () => ({ ok: true as const, value: [] }),
+    })
+    await settle()
+    // The ledger only feeds the outside-folder hints; a refusal must not empty the view.
+    const rows = await registered(booted).candidates(s1, { query: 'folder:do', position: 'leading', signal: signal() })
+    expect(rows.every(row => row.mentionKind !== 'error')).toBe(true)
+  })
+
+  it('does not offer the chooser row when this client has no workspace face', async () => {
+    const booted = await boot()
+    await settle()
+    // With no workspace face the pick becomes the menu's own walk instead of a
+    // chooser: the row still works, it just opens the walk root.
+    expect(registered(booted).onPick?.({
+      candidate: { name: '选择文件夹…', value: 'folder-choose', mentionKind: 'folder-choose' },
+      session: s1,
+      action: 'accept',
+      span: { start: 0, end: 2 },
+    } as never)).toEqual({ text: '@/', continue: true })
+    // No dialog opened and nothing was written into the composer.
+    expect(booted.sessionBail).not.toHaveBeenCalled()
   })
 })
 
