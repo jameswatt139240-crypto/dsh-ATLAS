@@ -1321,6 +1321,59 @@ describe('dsh-atlas folder chooser over the Host listing', () => {
   })
 })
 
+describe('dsh-atlas folder scoping from the composer', () => {
+  const scoped = (body: string) => { document.body.innerHTML = `<div data-lexical-editor="true"><p><span>${body}</span></p></div>` }
+
+  it('asks the Host whether a bare folder token is a folder, then scopes @file: to it', async () => {
+    const inspect = vi.fn(async (_id: SessionId, targets: readonly string[]) => ({
+      ok: true as const,
+      value: targets.map(relative => ({ relative, exists: true, kind: 'dir' as const })),
+    }))
+    const booted = await boot({
+      atFileInspect: inspect as never,
+      atFileSearch: async () => ({ ok: true as const, value: [{ path: '/ws/a.ts', relative: 'a.ts', kind: 'file' as const }] }),
+      atFileExternal: async () => ({ ok: true as const, value: { canDiscover: true, roots: ['E:/'], folders: [] } }),
+      atFileList: async (_id: SessionId, path: string) => ({ ok: true as const, value: listing(path, ['one.ts']) }),
+    })
+    // The scope is positional: the folder named immediately before the category
+    // token is what `@file:` lists. This token has no trailing separator, so its
+    // kind is the Host's answer, not a spelling rule.
+    scoped('@e:/outsidedir @file:')
+    await settle()
+    try {
+      const rows = await registered(booted).candidates(s1, { query: 'file:', position: 'leading', signal: signal() })
+      expect(inspect.mock.calls[0]?.[1]).toEqual(['e:/outsidedir'])
+      // The unscoped index still answers the first keystroke while the scope is read.
+      expect(rows.some(row => row.mentionKind === 'file')).toBe(true)
+      // The verdict is memoised: the next keystroke must not ask the Host again.
+      await registered(booted).candidates(s1, { query: 'file:o', position: 'leading', signal: signal() })
+      expect(inspect).toHaveBeenCalledTimes(1)
+    } finally {
+      document.body.innerHTML = ''
+    }
+  })
+
+  it('takes a trailing separator as the folder spelling and asks nothing', async () => {
+    const inspect = vi.fn()
+    const booted = await boot({
+      atFileInspect: inspect as never,
+      atFileSearch: async () => ({ ok: true as const, value: [{ path: '/ws/a.ts', relative: 'a.ts', kind: 'file' as const }] }),
+      atFileExternal: async () => ({ ok: true as const, value: { canDiscover: true, roots: ['E:/'], folders: [] } }),
+      atFileList: async (_id: SessionId, path: string) => ({ ok: true as const, value: listing(path, ['one.ts']) }),
+    })
+    scoped('@e:/outsidedir/ @file:')
+    await settle()
+    try {
+      const rows = await registered(booted).candidates(s1, { query: 'file:', position: 'leading', signal: signal() })
+      // A trailing separator already says "folder", so the Host is not consulted.
+      expect(inspect).not.toHaveBeenCalled()
+      expect(rows.some(row => row.mentionKind === 'file')).toBe(true)
+    } finally {
+      document.body.innerHTML = ''
+    }
+  })
+})
+
 describe('dsh-atlas chooser fallbacks', () => {
   it('opens its own dialog when the native chooser rejects', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
