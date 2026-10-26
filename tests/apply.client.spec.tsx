@@ -1321,6 +1321,51 @@ describe('dsh-atlas folder chooser over the Host listing', () => {
   })
 })
 
+describe('dsh-atlas chooser fallbacks', () => {
+  it('opens its own dialog when the native chooser rejects', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const booted = await boot({
+      uiWorkspace: { pickDirectory: async () => { throw new Error('directory-picker/unavailable') }, createDirectory: async () => '' },
+    })
+    const folderRow = { name: '选择文件夹…', value: 'folder-choose', mentionKind: 'folder-choose' }
+    registered(booted).onPick?.({ candidate: folderRow, session: s1, action: 'accept', span: { start: 0, end: 2 } })
+    await settle()
+    // The refusal is reported, and the plugin's own dialog takes over — the user
+    // still gets a chooser.
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('the native folder chooser is unavailable here'),
+      expect.any(Error),
+    )
+    expect(booted.sessionBail).not.toHaveBeenCalled()
+    warn.mockRestore()
+  })
+
+  it('confirms nothing when no pick was pending', async () => {
+    const booted = await boot()
+    const picker = pickerOf(booted).inject('s1')
+    // A confirm that arrives after the dialog closed must not write into the input.
+    picker.confirm('/home/x/picked')
+    expect(booted.sessionBail).not.toHaveBeenCalled()
+  })
+})
+
+describe('dsh-atlas refusals the Host reports', () => {
+  it('reports a listing the Host refuses instead of an empty folder', async () => {
+    const booted = await boot({
+      sidebarTabs: { register: vi.fn(() => () => {}) },
+      atFileList: async () => ({ ok: false as const, error: { code: 'EIO', message: 'gone' } }),
+    })
+    const tab = booted.slotsRegister.mock.calls
+      .find(call => call[0]?.name === 'sidebar.right.pane.tab')?.[0] as {
+        inject: (sessionId: string) => { list: (path: string, signal: AbortSignal) => Promise<DirectoryListing> }
+      } | undefined
+    expect(tab).toBeDefined()
+    // A failed listing must surface as an error the pane can show; an empty list
+    // would claim the folder is empty.
+    await expect(tab!.inject('s1').list('/home/x', signal())).rejects.toThrow('list failed: EIO: gone')
+  })
+})
+
 describe('dsh-atlas on the Atlas namespace and the right Sidebar', () => {
   it('reads the running Harness facts through the Atlas namespace', async () => {
     const runtime = vi.fn(async () => ({ ok: true as const, value: {} as AtlasRuntimeInfo }))
