@@ -326,6 +326,311 @@ describe('isPlainEnter', () => {
   })
 })
 
+describe('toggling against a store that really applies the update', () => {
+  it('rewrites the cached rows and clamps a highlight that no longer exists', () => {
+    const state = menu() as unknown as { groups: { source: string; status: string; items: unknown[] }[]; highlight: { source: string; index: number } }
+    state.groups = [{
+      source: 'atlas',
+      status: 'ready',
+      items: [{ name: 'A-folder', value: '/a', mentionKind: 'dir-group', groupKey: '/a' }],
+    }]
+    state.highlight = { source: 'atlas', index: 3 }
+    const applied: unknown[] = []
+    const controller = {
+      menu: {
+        getSnapshot: () => state,
+        subscribe: () => () => undefined,
+        update: (fn: (draft: typeof state) => void) => { fn(state); applied.push(state) },
+      },
+      track: () => undefined,
+      dismiss: () => undefined,
+    }
+    const rows = [{ name: 'inside', value: '/a/x', mentionKind: 'file' }]
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    flushSync(() => {
+      root.render(
+        <MentionNavigator
+          controller={controller as unknown as MentionNavigatorProps['controller']}
+          useInput={selector => selector(INPUT)}
+          inputActions={{ setDraft: () => undefined }}
+          toggleGroup={() => undefined}
+          sessionId="s1"
+          rebuildRows={() => rows}
+        />,
+      )
+    })
+    try {
+      const row = document.createElement('div')
+      row.id = 'dsh-slash-option-atlas-0'
+      document.body.appendChild(row)
+      row.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+      row.remove()
+      // The cached rows were swapped in place and the highlight, which pointed
+      // past the end, was pulled back to the only row left.
+      expect((state.groups[0]!.items as unknown[])).toEqual(rows)
+      expect(state.highlight.index).toBe(0)
+      expect(applied).toHaveLength(1)
+    } finally {
+      flushSync(() => { root.unmount() })
+      container.remove()
+    }
+  })
+})
+
+describe('page keys against a store that really applies the update', () => {
+  it('stops at the last row and ignores a highlight another source took', () => {
+    const snapshot = { ...menu(), highlight: { source: 'atlas', index: 0 } } as MenuState
+    const draftState = { ...menu(), highlight: { source: 'other', index: 1 } } as unknown as MenuState
+    const updates: unknown[] = []
+    const controller = {
+      menu: {
+        getSnapshot: () => snapshot,
+        subscribe: () => () => undefined,
+        update: (fn: (draft: MenuState) => void) => { fn(draftState); updates.push(fn) },
+      },
+      track: () => undefined,
+      dismiss: () => undefined,
+    }
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    flushSync(() => {
+      root.render(
+        <>
+          <div data-dsh-atlas-composer />
+          <MentionNavigator
+            controller={controller as unknown as MentionNavigatorProps['controller']}
+            useInput={selector => selector(INPUT)}
+            inputActions={{ setDraft: () => undefined }}
+            toggleGroup={() => undefined}
+            sessionId="s1"
+            rebuildRows={() => undefined}
+          />
+        </>,
+      )
+    })
+    const composer = container.querySelector('[data-dsh-atlas-composer]') as HTMLElement
+    try {
+      // One row short of the end: PageDown cannot move, so no update at all.
+      const last = { ...menu(), groups: [{ source: 'atlas', status: 'ready', items: [{ name: 'x', value: 'x', mentionKind: 'file' }] }], highlight: { source: 'atlas', index: 0 } } as MenuState
+      ;(controller.menu as { getSnapshot: () => MenuState }).getSnapshot = () => last
+      press(composer, 'PageDown')
+      expect(updates).toHaveLength(0)
+      // Now the row exists but the store's draft belongs to another source.
+      ;(controller.menu as { getSnapshot: () => MenuState }).getSnapshot = () => snapshot
+      press(composer, 'PageDown')
+      expect(updates).toHaveLength(1)
+      expect(draftState.highlight?.index).toBe(1)
+    } finally {
+      flushSync(() => { root.unmount() })
+      container.remove()
+    }
+  })
+})
+
+describe('mousedown targets that are not a row at all', () => {
+  it('ignores a non-node target, a non-HTML row and a non-numeric index', () => {
+    const mounted = mount(INPUT)
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+    svg.setAttribute('id', 'dsh-slash-option-atlas-1')
+    document.body.appendChild(svg)
+    const worded = document.createElement('div')
+    worded.id = 'dsh-slash-option-atlas-word'
+    document.body.appendChild(worded)
+    try {
+      window.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+      svg.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+      worded.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+      expect(mounted.update).not.toHaveBeenCalled()
+      expect(mounted.setDraft).not.toHaveBeenCalled()
+    } finally {
+      svg.remove()
+      worded.remove()
+      flushSync(() => { mounted.root.unmount() })
+    }
+  })
+})
+
+describe('the height budget is published once', () => {
+  it('leaves the CSS variable alone when the measurement did not change', () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    let bump = (): void => undefined
+    const controller = stubController(menu())
+    function Stable(): JSX.Element {
+      const [tick, setTick] = useState(0)
+      bump = () => { setTick(value => value + 1) }
+      return (
+        <div data-dsh-atlas-stable data-tick={tick}>
+          <Card top={() => 700} />
+          <div data-dsh-atlas-composer />
+          <MentionNavigator
+            controller={controller as unknown as MentionNavigatorProps['controller']}
+            useInput={selector => selector(INPUT)}
+            inputActions={{ setDraft: () => undefined }}
+            toggleGroup={() => undefined}
+            sessionId="s1"
+            rebuildRows={() => undefined}
+          />
+        </div>
+      )
+    }
+    flushSync(() => { root.render(<Stable />) })
+    // The composer card above lives in the same tree for the real plugin; here
+    // the budget simply has to be produced twice with the same number.
+    try {
+      flushSync(() => { bump() })
+      flushSync(() => { bump() })
+      expect(container.querySelector('[data-dsh-atlas-stable]')?.getAttribute('data-tick')).toBe('2')
+      expect(document.documentElement.style.getPropertyValue('--dsh-atlas-menu-max')).toBe('684px')
+      // A resize re-measures with the same budget: the variable is not rewritten.
+      window.dispatchEvent(new Event('resize'))
+    } finally {
+      flushSync(() => { root.unmount() })
+      container.remove()
+    }
+  })
+})
+
+describe('the highlight prefers the row the source marked as the completion', () => {
+  it('picks the hinted row over the first row', () => {
+    const hinted = {
+      ...menu(),
+      groups: [{
+        source: 'atlas',
+        status: 'ready',
+        items: [
+          { name: 'C-plugin', value: 'plugin:', mentionKind: 'category' },
+          { name: 'C-plugin: run it', value: 'plugin:', mentionKind: 'category', completionHint: true },
+        ],
+      }],
+    } as MenuState
+    expect(defaultHighlightIndex(hinted)).toBe(1)
+  })
+})
+
+describe('a menu snapshot that lost its hit', () => {
+  it('completes nothing on a click and folds nothing on Enter', () => {
+    const stale = {
+      ...menu(),
+      hit: null,
+      groups: [{ source: 'atlas', status: 'ready', items: [
+        { name: 'C-plugin', value: 'plugin:', mentionKind: 'category' },
+        { name: 'A-folder', value: '/a', mentionKind: 'dir-group', groupKey: '/a' },
+      ] }],
+    } as unknown as MenuState
+    const mounted = mount(INPUT, stale)
+    const row = document.createElement('div')
+    row.id = 'dsh-slash-option-atlas-0'
+    document.body.appendChild(row)
+    try {
+      row.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+      expect(mounted.setDraft).not.toHaveBeenCalled()
+      // The group header is the other mousedown path: it needs the hit to rebuild.
+      const header = document.createElement('div')
+      header.id = 'dsh-slash-option-atlas-1'
+      document.body.appendChild(header)
+      header.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+      header.remove()
+      expect(mounted.toggleGroup).not.toHaveBeenCalled()
+      press(mounted.composer, 'Enter')
+      expect(mounted.toggleGroup).not.toHaveBeenCalled()
+      expect(mounted.update).not.toHaveBeenCalled()
+    } finally {
+      row.remove()
+      flushSync(() => { mounted.root.unmount() })
+    }
+  })
+})
+
+describe('a mousedown whose target is not a node', () => {
+  it('returns before reading the row', () => {
+    const mounted = mount(INPUT)
+    try {
+      const event = document.createEvent('Event')
+      event.initEvent('mousedown', true, true)
+      Object.defineProperty(event, 'target', { value: null })
+      document.dispatchEvent(event)
+      expect(mounted.update).not.toHaveBeenCalled()
+    } finally {
+      flushSync(() => { mounted.root.unmount() })
+    }
+  })
+})
+
+describe('a second render while the turn is still starting', () => {
+  it('does not submit the same draft twice', () => {
+    // The product passes an inline callback, so its identity changes on every
+    // render: the effect re-runs while the phase is still 'submitting' and the
+    // guard is what keeps this to a single send.
+    const sends = vi.fn()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    let bump = (): void => undefined
+    let start = (): void => undefined
+    const controller = stubController(menu())
+
+    function Repeater(): JSX.Element {
+      const [tick, setTick] = useState(0)
+      const [phase, setPhase] = useState<MentionNavigationInput['phase']>('plain')
+      bump = () => { setTick(value => value + 1) }
+      start = () => { setPhase('submitting') }
+      return (
+        <>
+          <div data-dsh-atlas-repeater data-tick={tick} />
+          <MentionNavigator
+            controller={controller as unknown as MentionNavigatorProps['controller']}
+            useInput={selector => selector({ draft: '@p', draftRev: 4, phase })}
+            inputActions={{ setDraft: () => undefined }}
+            toggleGroup={() => undefined}
+            sessionId="s1"
+            rebuildRows={() => undefined}
+            onSend={() => { sends() }}
+          />
+        </>
+      )
+    }
+
+    flushSync(() => { root.render(<Repeater />) })
+    try {
+      flushSync(() => { start() })
+      expect(sends).toHaveBeenCalledTimes(1)
+      flushSync(() => { bump() })
+      flushSync(() => { bump() })
+      expect(sends).toHaveBeenCalledTimes(1)
+      expect(container.querySelector('[data-dsh-atlas-repeater]')?.getAttribute('data-tick')).toBe('2')
+    } finally {
+      flushSync(() => { root.unmount() })
+      container.remove()
+    }
+  })
+})
+
+describe('a click while the category list is still loading', () => {
+  it('neither folds nor completes anything', () => {
+    const loading: MenuState = { ...menu(), groups: [{ source: 'atlas', status: 'pending', items: [] }] }
+    const mounted = mount(EMPTY_INPUT, loading)
+    const row = document.createElement('div')
+    row.id = 'dsh-slash-option-atlas-3'
+    document.body.appendChild(row)
+    try {
+      const event = new MouseEvent('mousedown', { bubbles: true, cancelable: true })
+      row.dispatchEvent(event)
+      expect(event.defaultPrevented).toBe(false)
+      expect(mounted.update).not.toHaveBeenCalled()
+      expect(mounted.toggleGroup).not.toHaveBeenCalled()
+      expect(mounted.setDraft).not.toHaveBeenCalled()
+    } finally {
+      row.remove()
+      flushSync(() => { mounted.root.unmount() })
+    }
+  })
+})
+
 describe('overlay bridge', () => {
   it('leaves Tab and an ordinary Enter to the framework', () => {
     const { root, composer, setDraft, track, toggleGroup } = mount(INPUT, menu('p'))
