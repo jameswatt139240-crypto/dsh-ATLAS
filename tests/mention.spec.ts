@@ -5,7 +5,7 @@
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { expandMentions, mentionPreStep, scanMentions } from '../src/mention.ts'
@@ -301,6 +301,91 @@ describe('expandMentions', () => {
     } finally {
       await rm(root, { recursive: true, force: true })
     }
+  })
+})
+
+describe('reference expansion that fails', () => {
+  const agent = { session: { header: { cwd: '/ws' } } }
+  const boom = (name: string) => async () => { throw new Error(`${name} down`) }
+  const references = {
+    expandChats: async () => undefined,
+    expandSkills: boom('skills'),
+    expandPlugins: boom('plugins'),
+    expandAtlas: boom('atlas'),
+  }
+
+  it('keeps the turn alive when every expander throws, and reports each one', async () => {
+    const reported: unknown[] = []
+    const warn = vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => { reported.push(args[0]) })
+    try {
+      const decision = await mentionPreStep(
+        agent,
+        () => true,
+        [user('@a.ts')],
+        new AbortController().signal,
+        async () => ({ kind: 'enter', messages: [user('@a.ts')] }),
+        () => true,
+        references as never,
+      )
+      expect(decision.kind).toBe('enter')
+      // Nothing was injected, and the failures were reported instead of thrown.
+      expect(decision.messages).toHaveLength(1)
+      expect(decision.messages![0]!.source.kind).toBe('user')
+      expect(reported).toContain('[dsh-atlas] skill expansion failed:')
+      expect(reported).toContain('[dsh-atlas] plugin expansion failed:')
+      expect(reported).toContain('[dsh-atlas] atlas provider expansion failed:')
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('reports a past-chat failure and stays quiet when the turn was cancelled', async () => {
+    const reported: unknown[] = []
+    const errors = vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => { reported.push(args[0]) })
+    try {
+      const chatsDown = {
+        expandChats: boom('chats'),
+        expandSkills: async () => [],
+        expandPlugins: async () => [],
+      }
+      const decision = await mentionPreStep(
+        agent, () => true, [user('@a.ts')], new AbortController().signal,
+        async () => ({ kind: 'enter', messages: [] }), () => true, chatsDown as never,
+      )
+      expect(decision.kind).toBe('enter')
+      expect(reported).toContain('[dsh-atlas] past-chat expansion failed:')
+
+      // A cancellation is normal operation: it must not be reported as a failure.
+      reported.length = 0
+      // An AbortError that never touched the signal: the reason a cancellation is
+      // recognised by name, so the silent path is the expander's own abort.
+      const cancelled = {
+        expandChats: async () => { throw new DOMException('aborted', 'AbortError') },
+        expandSkills: async () => [],
+        expandPlugins: async () => [],
+      }
+      await mentionPreStep(
+        agent, () => true, [user('@a.ts')], new AbortController().signal,
+        async () => ({ kind: 'enter', messages: [] }), () => true, cancelled as never,
+      )
+      expect(reported).toHaveLength(0)
+    } finally {
+      errors.mockRestore()
+    }
+  })
+
+  it('leaves a message that the user did not author untouched', async () => {
+    const assistant = { ...user('@a.ts'), source: { kind: 'assistant' } }
+    const decision = await mentionPreStep(
+      agent,
+      () => false,
+      [assistant as never],
+      new AbortController().signal,
+      async () => ({ kind: 'enter', messages: [assistant as never] }),
+      () => true,
+    )
+    expect(decision.kind).toBe('enter')
+    expect(decision.messages).toEqual([assistant])
   })
 })
 

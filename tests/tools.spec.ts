@@ -39,6 +39,67 @@ function ctxWith(services: Record<string, unknown>): { get(key: string): unknown
   return { get: key => services[key] }
 }
 
+describe('the card each tool shows in the transcript', () => {
+  it('describes the call that produced it', () => {
+    const { register, registered } = captureTools()
+    registerMentionTools(ctxWith({ tools: { register } }) as never, () => ENABLED)
+    const tools = registered as unknown as Record<string, {
+      presentCall: (args: Record<string, unknown>) => unknown
+      output: { render: (args: unknown, value: string) => unknown }
+    }>
+    expect(tools.past_chats!.presentCall({ query: 'rates' })).toEqual({
+      card: 'generic', title: 'Past chats', kind: 'search', rawInput: 'rates',
+    })
+    expect(tools.read_past_chat!.presentCall({ sessionId: 'sess-a' })).toEqual({
+      card: 'generic', title: 'Read past chat', kind: 'search', rawInput: 'sess-a',
+    })
+    expect(tools.plugin_info!.presentCall({ query: 'atlas' })).toEqual({
+      card: 'generic', title: 'Plugins', kind: 'search', rawInput: 'atlas',
+    })
+    // No query is an empty raw input, never the string "undefined".
+    expect(tools.past_chats!.presentCall({})).toMatchObject({ rawInput: '' })
+    expect(tools.plugin_info!.presentCall({})).toMatchObject({ rawInput: '' })
+    // The text output schema renders the value verbatim.
+    expect(tools.plugin_info!.output.render(undefined, 'two lines')).toEqual([{ type: 'text', text: 'two lines' }])
+  })
+
+  it('refuses every category when the switch is off, and names what is missing', async () => {
+    const off = { ...ENABLED, enableChats: false, enablePlugins: false }
+    const { register, registered } = captureTools()
+    registerMentionTools(ctxWith({ tools: { register } }) as never, () => off)
+    const tools = registered as unknown as Record<string, { execute: (args: Record<string, unknown>, exec: unknown) => Promise<string> }>
+    const exec = { agent, signal: new AbortController().signal }
+    expect(await tools.past_chats!.execute({}, exec)).toBe('Past-chat mentions are disabled in Settings.')
+    expect(await tools.read_past_chat!.execute({ sessionId: 'sess-a' }, exec)).toBe('Past-chat mentions are disabled in Settings.')
+    expect(await tools.plugin_info!.execute({}, exec)).toBe('Plugin mentions are disabled in Settings.')
+
+    // Switched on but the endpoint is missing: each tool says so instead of throwing.
+    const on = captureTools()
+    registerMentionTools(ctxWith({ tools: { register: on.register } }) as never, () => ENABLED)
+    const onTools = on.registered as unknown as Record<string, { execute: (args: Record<string, unknown>, exec: unknown) => Promise<string> }>
+    expect(await onTools.past_chats!.execute({}, exec)).toBe('No session history service is available.')
+    expect(await onTools.read_past_chat!.execute({ sessionId: 'sess-a' }, exec)).toBe('Session history reading is unavailable.')
+    expect(await onTools.plugin_info!.execute({}, exec)).toBe('No matching plugins found.')
+    expect(await onTools.past_chats!.execute({ query: 'nothing' }, exec)).toBe('No session history service is available.')
+
+    // A resolver that finds nothing says so in words the model can relay.
+    const empty = captureTools()
+    const emptyResolver: SessionResolverFace = { listCandidates: async () => [] }
+    registerMentionTools(ctxWith({ tools: { register: empty.register }, sessionReferenceResolver: emptyResolver }) as never, () => ENABLED)
+    const emptyTools = empty.registered as unknown as Record<string, { execute: (args: Record<string, unknown>, exec: unknown) => Promise<string> }>
+    expect(await emptyTools.past_chats!.execute({ query: 'nothing' }, exec)).toBe('No past chats found.')
+
+    // Every tool declares itself safe to run beside another call. The wrapper
+    // validates the arguments first, so each is asked with a valid call.
+    const verdicts = on.registered as unknown as Record<string, { isConcurrencySafe: (args: Record<string, unknown>) => boolean }>
+    expect(verdicts.past_chats!.isConcurrencySafe({})).toBe(true)
+    expect(verdicts.read_past_chat!.isConcurrencySafe({ sessionId: 'sess-a' })).toBe(true)
+    expect(verdicts.plugin_info!.isConcurrencySafe({})).toBe(true)
+    // An invalid call is never concurrency-safe: the schema is checked first.
+    expect(verdicts.read_past_chat!.isConcurrencySafe({})).toBe(false)
+  })
+})
+
 describe('formatChatCandidate', () => {
   it('renders a readable line with label, id, workspace, and date', () => {
     const candidate: ChatCandidateRow = { sessionId: 'sess-a', label: 'Payment rates', cwd: '/work', createdAt: 1700000000000 }

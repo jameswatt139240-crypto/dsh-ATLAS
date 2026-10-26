@@ -502,6 +502,90 @@ describe('readDirectory', () => {
   })
 })
 
+describe('a directory handle that fails mid-listing', () => {
+  const entry = (name: string, kind: 'dir' | 'file' | 'symlink' | 'fifo'): Dirent => ({
+    name,
+    isDirectory: () => kind === 'dir',
+    isFile: () => kind === 'file',
+    isSymbolicLink: () => kind === 'symlink',
+  }) as unknown as Dirent
+
+  /** A handle that answers the given entries, then fails on the next read. */
+  function failingHandle(entries: readonly Dirent[], failure: Error) {
+    let index = 0
+    return {
+      async read(): Promise<Dirent | null> {
+        if (index < entries.length) return entries[index++] ?? null
+        throw failure
+      },
+      async close(): Promise<void> { /* nothing to release */ },
+    }
+  }
+
+  it('keeps what it already listed and says why it stopped (siblings)', async () => {
+    const warned: unknown[] = []
+    const warn = vi.spyOn(console, 'warn').mockImplementation((...args: unknown[]) => { warned.push(args[0]) })
+    try {
+      const found = await listSubdirectories('/root', { limit: 10, ignoreDirs: [] }, undefined,
+        (async () => failingHandle([entry('one', 'dir'), entry('two', 'dir')], new Error('EIO')) as never))
+      expect(found).toEqual(['/root/one', '/root/two'])
+      expect(String(warned[0])).toContain('stopped reading directory "/root"')
+      expect(String(warned[0])).toContain('EIO')
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('drops a link that does not resolve to a directory when links are followed', async () => {
+    const found = await listSubdirectories('/root', { limit: 10, ignoreDirs: [], followLinks: true }, undefined,
+      (async () => failingHandle([entry('ghost', 'symlink')], new Error('unused')) as never))
+    // /root/ghost does not exist: following the link resolves nothing, so it is
+    // dropped instead of being listed as a folder that cannot be opened.
+    expect(found).toEqual([])
+  })
+
+  it('keeps what it already listed and says why it stopped (entries)', async () => {
+    const warned: unknown[] = []
+    const warn = vi.spyOn(console, 'warn').mockImplementation((...args: unknown[]) => { warned.push(args[0]) })
+    try {
+      const listing = await readDirectory('/root', 10, undefined,
+        (async () => failingHandle([entry('b.txt', 'file')], new Error('EIO')) as never))
+      expect(listing).toEqual({ entries: [{ name: 'b.txt', kind: 'file' }], truncated: false })
+      expect(String(warned[0])).toContain('EIO')
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('skips a link whose target is gone and an entry that is neither file nor directory', async () => {
+    const listing = await readDirectory('/root', 10, undefined,
+      (async () => failingHandle([entry('ghost', 'symlink'), entry('pipe', 'fifo')], new Error('unused')) as never))
+    // The link resolves through the real filesystem and its target does not exist,
+    // so it is dropped rather than guessed at; the FIFO is neither of the two kinds.
+    expect(listing.truncated).toBe(false)
+    expect(listing.entries.every(item => item.name !== 'pipe')).toBe(true)
+    expect(listing.entries.some(item => item.name === 'ghost')).toBe(false)
+  })
+
+  it('reports "no subdirectory" when the probe cannot finish', async () => {
+    const warned: unknown[] = []
+    const warn = vi.spyOn(console, 'warn').mockImplementation((...args: unknown[]) => { warned.push(args[0]) })
+    try {
+      const broken = await hasSubdirectory('/root', {}, undefined,
+        (async () => failingHandle([], new Error('EACCES')) as never))
+      expect(broken).toBe(false)
+      expect(String(warned[0])).toContain('EACCES')
+
+      // A link to a missing target is not a subdirectory, and the probe keeps going.
+      const ghost = await hasSubdirectory('/root', {}, undefined,
+        (async () => failingHandle([entry('ghost', 'symlink')], new Error('unused')) as never))
+      expect(ghost).toBe(false)
+    } finally {
+      warn.mockRestore()
+    }
+  })
+})
+
 describe('pinEntry', () => {
   it('puts back the one entry the cap cut away, ahead of the page', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-atlas-pin-'))
