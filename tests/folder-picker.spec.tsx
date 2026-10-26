@@ -839,6 +839,72 @@ describe('the path line browses what was typed', () => {
 // The layer Escape unwinds, and the rest of the small gestures
 // ---------------------------------------------------------------------------
 
+/** Submit the new-folder form the way the browser does, through its own event. */
+function submit(where: HTMLElement): void {
+  const form = where.querySelector('.dsh_atlas_pickerNewRow') as HTMLFormElement
+  form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+}
+
+describe('the note under a filtered list', () => {
+  it('says the filter matched nothing, in place of the rows', async () => {
+    const full = mount()
+    await settle()
+    // Two keystrokes build a filter that no folder matches; the list says so
+    // instead of going blank.
+    press(full.container, 'z')
+    press(full.container, 'z')
+    await settle()
+    expect(dialog(full.container).textContent).toContain(t('picker.noMatch'))
+  })
+})
+
+describe('creating a folder', () => {
+  /** Open the new-folder form and type a name into it. */
+  async function typeName(harness: Harness, name: string): Promise<HTMLInputElement> {
+    click(buttonWith(harness.container, t('picker.newFolder')))
+    await settle()
+    const form = dialog(harness.container).querySelector('.dsh_atlas_pickerNewRow') as HTMLElement
+    const input = form.querySelector('input') as HTMLInputElement
+    typeInto(input, name)
+    await settle()
+    return input
+  }
+
+  it('creates the typed folder and walks into it', async () => {
+    const harness = mount({ create: ((_path: string, name: string) => Promise.resolve(`E:/${name}`)) as MountOptions['create'] })
+    await settle()
+    await typeName(harness, 'New')
+    submit(dialog(harness.container))
+    await settle()
+    // The path the level was showing is the parent it creates in.
+    expect(harness.create).toHaveBeenCalledWith('E:/', 'New')
+    // The form closes and the picker lands on the folder it just made.
+    expect(dialog(harness.container).querySelector('.dsh_atlas_pickerNewRow')).toBeNull()
+    const levels = [...harness.list.mock.calls, ...harness.browse.mock.calls].map(call => call[0])
+    expect(levels).toContain('E:/New')
+  })
+
+  it('shows the reason when the Host refuses to create it, and keeps the form', async () => {
+    const harness = mount({ create: (() => Promise.reject(new Error('read-only parent'))) as MountOptions['create'] })
+    await settle()
+    await typeName(harness, 'New')
+    submit(dialog(harness.container))
+    await settle()
+    expect(dialog(harness.container).querySelector('.dsh_atlas_pickerNewRow')).not.toBeNull()
+    expect(dialog(harness.container).textContent).toContain('read-only parent')
+  })
+
+  it('says nothing about an empty name, and creates nothing', async () => {
+    const harness = mount()
+    await settle()
+    await typeName(harness, '   ')
+    submit(dialog(harness.container))
+    await settle()
+    expect(harness.create).not.toHaveBeenCalled()
+    expect(dialog(harness.container).querySelector('.dsh_atlas_pickerNewRow')).not.toBeNull()
+  })
+})
+
 describe('Escape unwinds one layer at a time', () => {
   it('closes the new-folder form first', async () => {
     const harness = mount()
