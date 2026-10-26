@@ -10,6 +10,7 @@ import { encodeSessionReferenceUri } from '@deepseek-ai/dsh-session-reference'
 import {
   cleanChatMentions,
   collectChatReferences,
+  expandAtlasMentions,
   escapeReferenceAttribute,
   expandChatMentions,
   expandPluginMentions,
@@ -312,5 +313,41 @@ describe('mentionPreStep with category references', () => {
     expect(expandChats).not.toHaveBeenCalled()
     expect(expandSkills).not.toHaveBeenCalled()
     expect(expandPlugins).not.toHaveBeenCalled()
+  })
+})
+
+describe('a message whose blocks are not all text', () => {
+  it('walks past a non-text block and still collects what follows it', () => {
+    const a = chatMention('sess-a', 'Payment rates')
+    const message = createUserMessage({
+      content: [
+        { type: 'image', source: { kind: 'base64', mediaType: 'image/png', data: 'AA==' } } as never,
+        { type: 'text', text: `see ${a}` },
+      ],
+      source: { kind: 'user' },
+    })
+    const { references } = collectChatReferences([message])
+    // The image is carried through untouched; only its sibling text is rewritten.
+    expect(references.map(reference => reference.sessionId)).toEqual(['sess-a'])
+  })
+})
+
+describe('atlas targets in a mixed message', () => {
+  it('finds the mention after an image block', async () => {
+    const message = createUserMessage({
+      content: [
+        { type: 'image', source: { kind: 'base64', mediaType: 'image/png', data: 'AA==' } } as never,
+        { type: 'text', text: 'read @atlas:git/src/a.ts' },
+      ],
+      source: { kind: 'user' },
+    })
+    const expanded = await expandAtlasMentions(
+      [message],
+      { signal: new AbortController().signal } as never,
+      () => undefined,
+    )
+    // An unknown provider injects nothing: the walk still ran, and it returns the
+    // injections only (the original messages are never rewritten).
+    expect(expanded).toEqual([])
   })
 })

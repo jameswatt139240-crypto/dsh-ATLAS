@@ -80,13 +80,12 @@ caller sharing an in-flight promise, retired-client fallbacks, the folder picker
 | `src/client/SettingsSection.tsx` | 3 | 163, 164, 186 |
 | `src/git.ts` | 2 | 62, 146 |
 | `src/recent-folders.ts` | 2 | 144, 171 |
-| `src/references.ts` | 2 | 172, 283 |
 | `src/client/ReferenceLinks.tsx` | 2 | 286, 356 |
 | `src/client/draft-links.ts` | 2 | 121, 452 |
-| `src/client/session-link.ts` | 2 | 49, 95 |
 | `src/contract.ts` | 1 | 34 |
 | `src/client/draft-scope.ts` | 1 | 39 |
 | `src/client/history-frames.ts` | 1 | 353 |
+| `src/client/session-link.ts` | 1 | 95 |
 
 ### 2b. Attempt log (dead ends, so they are not repeated)
 
