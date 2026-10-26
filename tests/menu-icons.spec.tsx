@@ -82,6 +82,36 @@ describe('MenuIcons', () => {
     expect(slots.every(slot => slot.hasAttribute(HOST_ATTRIBUTE))).toBe(true)
   })
 
+  it('draws nothing for an owned row the framework left without a slot', () => {
+    // Both rows are ours; the second one has no icon slot at all.
+    document.body.innerHTML = optionRow(0) + optionRow(1, false)
+    const { host } = mount([
+      { mentionKind: 'file', value: 'a.ts' },
+      { mentionKind: 'file', value: 'b.ts' },
+    ])
+    expect(host.querySelectorAll('.dsh_atlas_menuIcon')).toHaveLength(1)
+  })
+
+  it('draws nothing for a row the framework has not rendered yet', () => {
+    // Our group says two rows; the DOM still has only the first one.
+    document.body.innerHTML = optionRow(0)
+    const { host } = mount([{ mentionKind: 'file', value: 'a.ts' }, { mentionKind: 'skill' }])
+    expect(host.querySelectorAll('.dsh_atlas_menuIcon')).toHaveLength(1)
+  })
+
+  it('stops covering a slot the framework takes away', () => {
+    document.body.innerHTML = optionRow(0) + optionRow(1)
+    const { host } = mount([{ mentionKind: 'file', value: 'a.ts' }, { mentionKind: 'skill' }])
+    const slots = [...document.querySelectorAll('[class*="itemIcon"]')] as HTMLElement[]
+    expect(slots.every(slot => slot.hasAttribute(HOST_ATTRIBUTE))).toBe(true)
+    // The row goes away; the framework's own glyph must come back with it.
+    slots[1]!.remove()
+    window.dispatchEvent(new Event('resize'))
+    flushSync(() => {})
+    expect(slots[1]!.hasAttribute(HOST_ATTRIBUTE)).toBe(false)
+    expect(host.querySelectorAll('.dsh_atlas_menuIcon')).toHaveLength(1)
+  })
+
   it('marks only the slots it actually covers', () => {
     document.body.innerHTML = optionRow(0) + optionRow(1, false) + optionRow(2)
     const { host } = mount([

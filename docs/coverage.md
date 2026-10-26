@@ -75,8 +75,6 @@ caller sharing an in-flight promise, retired-client fallbacks, the folder picker
 | `src/client/DraftLinks.tsx` | 5 | 94, 168, 169, 170, 216 |
 | `src/client/FrameCursor.tsx` | 5 | 382, 458, 554, 576, 589 |
 | `src/client/FolderTab.tsx` | 4 | 105, 110, 136, 168 |
-| `src/client/FilesDock.tsx` | 3 | 122, 127, 152 |
-| `src/client/MenuIcons.tsx` | 3 | 78, 129, 141 |
 | `src/client/SettingsSection.tsx` | 3 | 163, 164, 186 |
 | `src/git.ts` | 2 | 62, 146 |
 | `src/recent-folders.ts` | 2 | 144, 171 |

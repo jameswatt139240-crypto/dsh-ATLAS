@@ -4,6 +4,7 @@
  * tokens parsed from the draft, the path button opens the file on the host,
  * the × removes exactly one token, and the settings switch hides the strip.
  */
+import { PASTED_MENTION_MARKER } from '../src/paste.ts'
 import { describe, expect, it, vi } from 'vitest'
 import { flushSync } from 'react-dom'
 import { createRoot, type Root } from 'react-dom/client'
@@ -87,6 +88,19 @@ describe('draftMentions', () => {
     expect(draftMentions('@a.ts @a.ts')).toEqual([
       { kind: 'file', key: 0, label: 'a.ts', relative: 'a.ts', link: { kind: 'file', path: 'a.ts' }, start: 0, end: 5 },
     ])
+  })
+
+  it('drops a bare slash, which names no folder', () => {
+    // `@/` alone is the walk root, not a path: a chip for it would be empty.
+    expect(draftMentions('@/ and @a.ts').map(mention => mention.label)).toEqual(['a.ts'])
+  })
+
+  it('never lists a marker-carrying token as a skill or a plugin', () => {
+    // A pasted skill or plugin name carries the marker that keeps it from being
+    // read as a reference; the dock must not build a chip for it either.
+    const marker = PASTED_MENTION_MARKER
+    const mentions = draftMentions(`@skill:blender${marker} @plugin:dsh${marker} @a.ts`)
+    expect(mentions.map(mention => mention.kind)).toEqual(['file'])
   })
 
   it('parses skill, plugin, provider, and chat mentions alongside paths', () => {
