@@ -337,6 +337,58 @@ describe('browsing a directory in the draft', () => {
   })
 })
 
+describe('a caller that walks away mid-fetch', () => {
+  /**
+   * Abort the caller's signal from inside the loader, so the pass after the await
+   * is the one that sees it.
+   */
+  function leaving(): { signal: AbortSignal; abort: () => void } {
+    const controller = new AbortController()
+    return { signal: controller.signal, abort: () => { controller.abort() } }
+  }
+
+  it('answers nothing for every category page when the signal is already aborted', async () => {
+    const gone = leaving()
+    const h = harness({
+      listSkills: vi.fn(async () => { gone.abort(); return [] }),
+      listChats: vi.fn(async () => { gone.abort(); return [] }),
+      listPlugins: vi.fn(async () => { gone.abort(); return [] }),
+      list: vi.fn(async (_id: SessionId, path: string) => { gone.abort(); return { path, entries: [] } }),
+    })
+    const ask = (query: string) =>
+      h.source.candidates(session('s1'), { query, position: 'leading', signal: gone.signal }) as Promise<unknown[]>
+    // Each page checks the caller once more after its fetch: a menu that closed
+    // must not push rows into a gone render.
+    expect(await ask('skill:')).toEqual([])
+    expect(await ask('chat:')).toEqual([])
+    expect(await ask('plugin:')).toEqual([])
+    expect(await ask('folder:src')).toEqual([])
+  })
+})
+
+describe('a filtered folder page', () => {
+  const askQuery = (source: { candidates: Function }, query: string, signal?: AbortSignal) =>
+    source.candidates(session('s1'), { query, position: 'leading', signal: signal ?? new AbortController().signal }) as Promise<{ name: string }[]>
+
+  it('asks the Host for the outside ledger, and stops when the caller has left', async () => {
+    const external = vi.fn(async () => ({ canDiscover: true, roots: [], folders: ['/outside/repo'] }))
+    const h = harness({ external, list: vi.fn(async (_id: SessionId, path: string) => ({ path, entries: [{ name: 'src', kind: 'dir' as const }] })) })
+    await askQuery(h.source, 'folder:src')
+    // The ledger grows as references are sent, so a filtered page reads it too.
+    expect(external).toHaveBeenCalled()
+
+    const controller = new AbortController()
+    const leaving = harness({
+      external: vi.fn(async () => {
+        controller.abort()
+        return { canDiscover: true, roots: [], folders: [] }
+      }),
+      list: vi.fn(async (_id: SessionId, path: string) => ({ path, entries: [] })),
+    })
+    expect(await askQuery(leaving.source, 'folder:src', controller.signal)).toEqual([])
+  })
+})
+
 describe('invalidating the off-workspace ledger', () => {
   const askFolder = (source: { candidates: Function }) =>
     source.candidates(session('s1'), { query: 'folder:', position: 'leading', signal: new AbortController().signal }) as Promise<{ name: string }[]>
@@ -373,6 +425,8 @@ describe('picking a category row', () => {
       .toEqual({ text: '@[Payment rates](dsh-session:YQ) ' })
     expect(pick({ name: 'dsh-atlas', value: 'dsh-atlas', mentionKind: 'plugin' }))
       .toEqual({ text: '@plugin:dsh-atlas ' })
+    // A provider row with no value has nothing to draft.
+    expect(pick({ name: 'git', mentionKind: 'provider' })).toBeUndefined()
     // Headers fold and notes say something: neither drafts text.
     expect(pick({ name: '▾ 技能', mentionKind: 'skill-group' })).toBeUndefined()
     expect(pick({ name: '▾ 文件夹', mentionKind: 'dir-group' })).toBeUndefined()
