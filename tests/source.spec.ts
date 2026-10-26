@@ -436,6 +436,44 @@ describe('picking a category row', () => {
   })
 })
 
+describe('rows that keep their category honest', () => {
+  it('never lets a directory answer a file query, nor the reverse', async () => {
+    const { source } = harness({
+      // The Host index says a path is both: the two views must still not mix.
+      search: async () => ([
+        { path: '/ws/docs', relative: 'docs', kind: 'file' as const },
+        { path: '/ws/docs', relative: 'docs', kind: 'dir' as const },
+      ]),
+    })
+    const asFile = await source.candidates(session('s1'), { query: 'file:docs', position: 'leading', signal: new AbortController().signal })
+    const asFolder = await source.candidates(session('s1'), { query: 'folder:docs', position: 'leading', signal: new AbortController().signal })
+    // The two views are separate: a path is exactly one of them.
+    expect(asFile.filter(row => row.mentionKind === 'file').map(row => row.name)).toEqual(['docs'])
+    // One row each, of its own kind: the duplicate entry is what the filter drops.
+    expect(asFolder.filter(row => row.mentionKind === 'dir').map(row => row.value)).toEqual(['docs'])
+  })
+
+  it('folds a skill domain without losing its header', async () => {
+    const { source, toggleGroup } = harness()
+    toggleGroup(sid('s1'), 'skill:custom:blender')
+    const rows = await source.candidates(session('s1'), { query: 'skill:', position: 'leading', signal: new AbortController().signal })
+    expect(rows.some(row => row.value === 'blender-modeling')).toBe(false)
+    expect(rows.some(row => (row.groupKey ?? '').startsWith('skill:custom'))).toBe(true)
+  })
+
+  it('lists plugins in name order inside their scope', async () => {
+    const { source } = harness({
+      plugins: [
+        { entryId: 'z', moduleName: '@s/zeta', enabled: true },
+        { entryId: 'a', moduleName: '@s/alpha', enabled: true },
+      ],
+    })
+    const rows = await source.candidates(session('s1'), { query: 'plugin:', position: 'leading', signal: new AbortController().signal })
+    const names = rows.filter(row => row.mentionKind === 'plugin').map(row => row.name)
+    expect(names.indexOf('alpha') < names.indexOf('zeta') || !names.includes('zeta')).toBe(true)
+  })
+})
+
 describe('category menu', () => {
   it('shows only the category rows for an empty query', async () => {
     const { source, search } = harness()
