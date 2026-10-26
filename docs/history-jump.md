@@ -345,7 +345,7 @@ face.loadThrough(frame.seq)      // SessionSeq：durable seq
 | 分组 | 字段 | 类型 | 默认 | 含义 |
 | --- | --- | --- | --- | --- |
 | **两个功能共用** | `historyJump` | boolean | `true` | F1+F2 总开关；关掉后所有键彻底让位 |
-| **两个功能共用** | `historyJumpFrames` | `'message' \| 'turn'` | `'message'` | 帧粒度：默认每条用户消息一格；`'turn'` 时一个 turn 只留第一格 |
+| **两个功能共用** | `historyJumpFrames` | `'message' \| 'turn'` | `'turn'` | 帧粒度：**默认一轮一格**（与右侧轮次导轨同一把尺，A-33）；`'message'` 时提问与每条回答各一格 |
 | **两个功能共用** | `historyJumpReuseMode` | `'replace' \| 'append'` | `'replace'` | 重用时覆盖草稿还是追加到草稿末尾 |
 | **Esc 漫游** | `historyJumpSmartFollow` | boolean | **`false`** | **智能跟随**（A-19 第 3 条）：开启后两条功能的内部游标才随**用户滚动 / 点击右侧标尺栏**到达的位置同步；默认关闭 = 两条功能各自维护自己的位置（A-19 第 2 条） |
 | **Ctrl + ↑ / ↓ 快速复用** | （暂无专属设置） | — | — | 该组的**行为**由 A-21 锁定：不循环、随新消息重置回草稿位。分组本身即为将来新增该功能专属设置预留位置 |

@@ -38,8 +38,8 @@ dsh plugin --profile web add github:jameswatt139240-crypto/dsh-ATLAS
 git clone https://github.com/jameswatt139240-crypto/dsh-ATLAS
 dsh plugin --profile web add link:/path/to/dsh-ATLAS
 
-# npm 包（发布后；scope 是工作室的，插件 id 仍是 `dsh-atlas`）
-dsh plugin --profile web add @sidequest-007/dsh-atlas
+# npm 包（已发布；`port` 是移植版使用的 tag，`latest` 仍是 1.0.9）
+dsh plugin --profile web add @sidequest-007/dsh-atlas@1.0.9-port.7
 ```
 
 安装或更新后**重启 `dsh web`**，确保 Host 与浏览器客户端都加载同一版本。然后在输入框打 `@`。
@@ -86,6 +86,22 @@ dsh plugin --profile web add @sidequest-007/dsh-atlas
 ![引用栏](assets/screenshots/file-mention-composer.png)
 
 *输入框上方的引用栏：草稿里每个引用一行，各带自己的图标、≈token 成本（红色的 `≈26k tokens` 是超过 8 000 的高亮）与移除按钮——草稿里的每个 token 同时都被画成链接。*
+
+## 历史跳转（<kbd>Esc</kbd>）
+
+两条回看会话的通道，都不必碰滚动条。
+
+- **就地漫游**：输入框为空时按 <kbd>Esc</kbd>，把草稿先放下，输入框上方出现读数 —— `历史 第 3 / 19 轮`（粒度是「条」时写 `条`）。<kbd>↑</kbd>/<kbd>↓</kbd> 逐格走，<kbd>PageUp</kbd>/<kbd>PageDown</kbd> 走五格，<kbd>Home</kbd>/<kbd>End</kbd> 跳最旧一格或回到你自己的草稿。任何可打印字符、<kbd>Backspace</kbd>、<kbd>Tab</kbd> 都退出漫游并让该键按原义落进输入框；在你写的那一格上按 <kbd>Enter</kbd> 才把那段文字取回，落在别的格上按 <kbd>Enter</kbd> 只是退出。
+- **检索面板**：<kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>H</kbd>（不带 <kbd>Shift</kbd> 同样能开）列出所有落点，带轮号与预览；输入即过滤，<kbd>↑</kbd>/<kbd>↓</kbd> 移动，<kbd>Enter</kbd> 跳转，<kbd>Esc</kbd> 关闭。
+- **默认一轮一格** —— 与页面右侧那把轮次导轨同一把尺：读数里的 `第 N / M 轮` 与导轨第 N 个刻度指的是同一轮。把**历史粒度**改成「每条消息」，才会在提问与每条回答上分别停。
+- **一轮的回答本身也是落点**，不是提问的附属：落到某一轮就落在它被回答的位置，所以「整段会话都是别人发起」也能走。系统发起的轮次同样是格，这就是刚开的会话虽然只有 1 个系统轮、读数也写 `第 1 / 1 轮` 而不是空白的原因。
+- **会抢键的场合一律让位**：`@` 菜单开着、有模态、或当前轮还在生成时，<kbd>Esc</kbd> 保持原义 —— 漫游绝不吞掉生成中那第一下 <kbd>Esc</kbd>。
+- **取回**把该格的文字写回输入框：按**取回方式**覆盖（默认）或追加。<kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd> 不进漫游、直接取回；它在两端**夹取停住**而不环绕，且你发出一条消息后位置重置回草稿位，所以第一次 <kbd>Ctrl</kbd>+<kbd>↑</kbd> 总是从你当下的位置起算。漫游则保留自己的游标，并在两端环绕。
+- **智能跟随默认关**：滚动会话或点导轨都不会移动任何一个游标。想让漫游从你最后看的位置起算，在设置里打开它。
+
+![历史漫游](assets/screenshots/history-roam.png)
+
+*按 <kbd>Esc</kbd> 后输入框上方的读数：`历史 第 0 / 1 轮 · 当前草稿` —— 停在你自己的草稿位，本会话共 1 轮，粒度为「轮」；按 <kbd>↑</kbd> 才走到那一轮。*
 
 ## 注入语义
 
@@ -209,6 +225,10 @@ const provider: AtlasProvider = {
 | 候选数量上限 | 50 | 每次请求返回的候选条目上限（1–200） |
 | 忽略粘贴文本中的 @ | 开 | 从其他应用粘贴的 `@内容` 保持普通文本，不触发引用 |
 | 文件过滤 | — | 全局与工作区两套规则；每条可选 Exact / Regex 与是否区分大小写 |
+| 启用历史跳转 | 开 | <kbd>Esc</kbd> 与检索面板的总开关；关闭后所有键交回输入框 |
+| 历史粒度 | 每轮对话 | 一轮一格（与右侧导轨同尺），或每条消息一格 —— 提问与每条回答分开停 |
+| 取回方式 | 覆盖 | 取回某一格时覆盖草稿，还是追加到草稿末尾 |
+| 智能跟随 | 关 | 让漫游游标从会话最后滚动到的位置（或最后点的导轨刻度）起算 |
 
 ![文件提及设置](assets/screenshots/file-mention-settings.png)
 

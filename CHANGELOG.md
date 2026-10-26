@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.0.9-port.8] - 2026-10-27
+
+### 文档
+
+- **两种语言都把「历史跳转」写进 README**：漫游（<kbd>Esc</kbd>）与检索面板（<kbd>Ctrl/Cmd+Shift+H</kbd>）的按键表、
+  一格一轮与导轨同一把尺（A-33）、回答与系统轮次也是落点、会抢键时的让位规则、取回方式与智能跟随的口径。
+  设置表补上四项（启用历史跳转 / 历史粒度 / 取回方式 / 智能跟随），默认值按 port.5 起**真实生效**的口径写
+  （历史粒度默认「每轮对话」）。
+- **`docs/history-jump.md` §7.1 的默认值不再是 `'message'`**：与 `src/client/settings.ts`、`src/settings.ts` 对齐为 `'turn'`。
+- **新增 `assets/screenshots/history-roam.png`**（1280×820 @2x，取自真实实例）：按 <kbd>Esc</kbd> 后输入框上方的读数
+  `历史 第 0 / 1 轮 · 当前草稿`。
+- 包描述与关键词补上历史跳转（`history` / `keyboard` / `navigation` / `session-history` / `esc`）。
+
+### 测试
+
+- `tests/mention-navigator.spec.tsx` 新增两组：一次提交只触发一次 `onSend`（`submitting` 跨多次渲染只发一次，
+  回到 idle 后再提交才再发）；菜单高度预算把输入框卡片顶边写成 `--dsh-atlas-menu-max`，跟随 resize，
+  底部 160px 夹取，卡片消失时移除该变量。
+- 语句覆盖 94.87%、分支 90.13%，单测 **1040 通过 / 1 跳过**。
+
 ## [1.0.9-port.7] - 2026-10-27
 
 ### 修复

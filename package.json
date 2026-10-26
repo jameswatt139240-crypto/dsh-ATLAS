@@ -1,7 +1,7 @@
 {
   "name": "@sidequest-007/dsh-atlas",
-  "description": "AT Last, All Sources. One @ . Jump anywhere.",
-  "version": "1.0.9-port.7",
+  "description": "AT Last, All Sources. One @ to jump anywhere — and Esc to walk the session back, one turn at a time.",
+  "version": "1.0.9-port.8",
   "license": "MIT",
   "author": "Side Quest Labs",
   "publishConfig": {
@@ -16,7 +16,12 @@
     "at-mention",
     "composer",
     "workspace",
-    "reference"
+    "reference",
+    "history",
+    "keyboard",
+    "navigation",
+    "session-history",
+    "esc"
   ],
   "homepage": "https://github.com/jameswatt139240-crypto/dsh-ATLAS#readme",
   "bugs": {

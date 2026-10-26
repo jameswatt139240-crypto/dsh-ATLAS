@@ -38,8 +38,8 @@ dsh plugin --profile web add github:jameswatt139240-crypto/dsh-ATLAS
 git clone https://github.com/jameswatt139240-crypto/dsh-ATLAS
 dsh plugin --profile web add link:/path/to/dsh-ATLAS
 
-# npm (once published; the scope is the studio's, the plugin id stays `dsh-atlas`)
-dsh plugin --profile web add @sidequest-007/dsh-atlas
+# npm (published; `port` is the tag the ported builds ship under, `latest` stays 1.0.9)
+dsh plugin --profile web add @sidequest-007/dsh-atlas@1.0.9-port.7
 ```
 
 Restart `dsh web` after installing or updating so the Host and the browser client load the same version. Then type `@` in the composer.
@@ -85,6 +85,22 @@ The menu keeps the category rows — five built in, plus the bundled `@git` — 
 ![Reference dock](assets/screenshots/file-mention-composer.png)
 
 *The reference dock above the composer: one row per mention in the draft, each with its own glyph, its approximate token cost (`≈26k tokens` in red is past the 8 000 highlight) and its remove button — and every token in the draft painted as a link.*
+
+## History jump (<kbd>Esc</kbd>)
+
+Two ways to reach back into the session without touching the scrollbar.
+
+- **Roam in place.** With an empty composer, <kbd>Esc</kbd> puts the draft aside and shows a readout above it — `历史 第 3 / 19 轮`, or `… 条` when the granularity is per message. <kbd>↑</kbd>/<kbd>↓</kbd> walk one stop at a time, <kbd>PageUp</kbd>/<kbd>PageDown</kbd> five, <kbd>Home</kbd>/<kbd>End</kbd> jump to the oldest stop or back to your own draft. Typing any printable character, or <kbd>Backspace</kbd>, <kbd>Tab</kbd>, leaves the roam and lets the key do its ordinary job. <kbd>Enter</kbd> on a stop you wrote reuses that text; on any other stop it only leaves the roam.
+- **The palette.** <kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>H</kbd> (the same chord without <kbd>Shift</kbd> also opens it) lists the stops with their turn number and a preview; type to filter, <kbd>↑</kbd>/<kbd>↓</kbd> to move, <kbd>Enter</kbd> to jump, <kbd>Esc</kbd> to close.
+- **One stop per turn by default** — the same ruler as the turn rail down the right edge of the conversation, so `第 N / M 轮` in the readout and tick N of the rail name the same turn. Switch **History granularity** to *per message* to stop on the prompt and on each answer separately.
+- **A turn's answer is a stop too**, not part of its prompt: landing on a turn lands on what was answered, so a session whose turns were all started for you is still walkable. System-initiated turns are stops as well, which is why a fresh session with one system turn shows `第 1 / 1 轮` rather than nothing.
+- **Keys that would surprise you yield.** While the `@` menu is open, a modal is up, or a turn is generating, <kbd>Esc</kbd> keeps its ordinary meaning — the roam never swallows the first <kbd>Esc</kbd> of a running turn.
+- **Reuse** writes the stop's text back into the composer: replace (default) or append, per **Reuse mode**. <kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd> reuses directly without entering the roam; it clamps at both ends instead of wrapping, and its position resets to your draft after you send, so the first <kbd>Ctrl</kbd>+<kbd>↑</kbd> always starts from where you are. The roam keeps its own cursor and does wrap at both ends.
+- **Smart follow off by default**: scrolling the conversation or clicking the rail does not move either cursor. Turn it on in settings if you want the roam to start wherever you last looked.
+
+![History roam](assets/screenshots/history-roam.png)
+
+*The roam readout above the composer after <kbd>Esc</kbd>: `历史 第 0 / 1 轮 · 当前草稿` — standing on your own draft, of one turn in this session, at turn granularity. <kbd>↑</kbd> takes you to that turn.*
 
 ## Injected references
 
@@ -208,6 +224,10 @@ Managed in **Settings → Workspace file mentions**:
 | Candidate limit | 50 | Maximum candidates returned per request (1–200) |
 | Ignore @ mentions in pasted text | on | `@tokens` pasted from other applications stay plain text |
 | File filters | — | Global and per-workspace rules; each rule is Exact or Regex, with its own case setting |
+| Enable history jump | on | Master switch for <kbd>Esc</kbd> and the palette; off hands every key back to the composer |
+| History granularity | per turn | One stop per turn (the rail's own ruler), or one per message — a prompt and each answer separately |
+| Reuse mode | replace | Whether a reused stop replaces the draft or is appended to it |
+| Smart follow | off | Let the roam cursor start where the conversation was last scrolled to or the rail last clicked |
 
 ![File mention settings](assets/screenshots/file-mention-settings.png)
 

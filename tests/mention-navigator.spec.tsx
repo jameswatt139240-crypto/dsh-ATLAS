@@ -5,7 +5,7 @@
  * element on purpose — the bridge reads menu state, never the input element, and
  * a handler that needed a textarea would silently never run in the product.
  */
-import { useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -45,7 +45,7 @@ function menu(query = 'p', items?: { name: string; value: string; mentionKind: s
 }
 
 /** Mount the overlay with an explicit input state and a stub controller. */
-function mount(initialInput: MentionNavigationInput, currentMenu = menu(), toggleGroup?: (key: string) => void, rebuildRows?: (sessionId: string, query: string) => unknown): {
+function mount(initialInput: MentionNavigationInput, currentMenu = menu(), toggleGroup?: (key: string) => void, rebuildRows?: (sessionId: string, query: string) => unknown, onSend?: () => void, cardTop?: () => number): {
   root: Root
   composer: HTMLElement
   track: ReturnType<typeof vi.fn>
@@ -89,9 +89,13 @@ function mount(initialInput: MentionNavigationInput, currentMenu = menu(), toggl
       toggleGroup: toggleGroupSpy,
       sessionId: 's1',
       rebuildRows: rebuildRows ?? (() => undefined),
+      onSend,
     } as unknown as MentionNavigatorProps
     return (
       <>
+        {cardTop === undefined ? null : (
+          <div data-composer-card style={{ position: 'relative', height: '40px' }} />
+        )}
         <div data-dsh-atlas-composer />
         <MentionNavigator {...props} />
       </>
@@ -113,6 +117,102 @@ function mount(initialInput: MentionNavigationInput, currentMenu = menu(), toggl
 function press(composer: HTMLElement, key: string): boolean {
   return composer.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
 }
+
+/** A menu controller stub; the plugin only reads its snapshot and subscribes. */
+function stubController(state: MenuState) {
+  return {
+    menu: { getSnapshot: () => state, subscribe: () => () => undefined, update: () => undefined },
+    track: () => undefined,
+    dismiss: () => undefined,
+  }
+}
+
+/** The composer card the menu measures itself against. */
+function Card({ top }: { top: () => number }): JSX.Element {
+  const ref = useRef<HTMLDivElement | null>(null)
+  useLayoutEffect(() => {
+    const element = ref.current
+    if (element === null) return
+    element.getBoundingClientRect = () => ({
+      top: top(), bottom: top() + 40, left: 0, right: 0, width: 0, height: 40, x: 0, y: top(), toJSON: () => ({}),
+    }) as DOMRect
+  })
+  return <div data-composer-card ref={ref} />
+}
+
+describe('one send per submission', () => {
+  it('calls onSend once while the phase stays submitting, and again after it resets', () => {
+    const onSend = vi.fn()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    let setPhase = (phase: MentionNavigationInput['phase'], rev: number): void => undefined
+    function Shell(): JSX.Element {
+      const [input, setInput] = useState<MentionNavigationInput>({ draft: '', draftRev: 1, phase: 'plain' })
+      setPhase = (phase, rev) => { setInput(previous => ({ ...previous, phase, draftRev: rev })) }
+      return (
+        <MentionNavigator
+          controller={stubController(menu())}
+          useInput={(selector: (state: MentionNavigationInput) => unknown) => selector(input)}
+          inputActions={{ setDraft: () => undefined }}
+          toggleGroup={() => undefined}
+          sessionId="s1"
+          rebuildRows={() => undefined}
+          onSend={onSend}
+        />
+      )
+    }
+    flushSync(() => { root.render(<Shell />) })
+    expect(onSend).not.toHaveBeenCalled()
+
+    // One submission spans several renders; only the first one sends.
+    flushSync(() => { setPhase('submitting', 2) })
+    flushSync(() => { setPhase('submitting', 3) })
+    expect(onSend).toHaveBeenCalledTimes(1)
+
+    // Back to idle, then a second submission sends again.
+    flushSync(() => { setPhase('plain', 4) })
+    flushSync(() => { setPhase('submitting', 5) })
+    expect(onSend).toHaveBeenCalledTimes(2)
+    root.unmount()
+  })
+})
+
+describe('the menu height budget', () => {
+  it('publishes the composer card top as a CSS variable, follows a resize, and clears when the card is gone', () => {
+    const cardTop = vi.fn(() => 400)
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    function Shell({ card }: { card: boolean }): JSX.Element {
+      return (
+        <>
+          {card ? <Card top={cardTop} /> : null}
+          <MentionNavigator
+            controller={stubController(menu())}
+            useInput={(selector: (state: MentionNavigationInput) => unknown) => selector(INPUT)}
+            inputActions={{ setDraft: () => undefined }}
+            toggleGroup={() => undefined}
+            sessionId="s1"
+            rebuildRows={() => undefined}
+          />
+        </>
+      )
+    }
+    flushSync(() => { root.render(<Shell card />) })
+    const style = document.documentElement.style
+    // jsdom reports zero-size rects, so the card's own top is stubbed onto it.
+    expect(style.getPropertyValue('--dsh-atlas-menu-max')).toBe('384px')
+
+    cardTop.mockReturnValue(1200)
+    window.dispatchEvent(new Event('resize'))
+    expect(style.getPropertyValue('--dsh-atlas-menu-max')).toBe('1184px')
+
+    flushSync(() => { root.render(<Shell card={false} />) })
+    expect(style.getPropertyValue('--dsh-atlas-menu-max')).toBe('')
+    root.unmount()
+  })
+})
 
 describe('coexisting @ sources', () => {
   const OUR_ROWS = [
