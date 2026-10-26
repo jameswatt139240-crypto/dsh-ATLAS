@@ -171,6 +171,15 @@ describe('FilesDock', () => {
     root.unmount()
   })
 
+  it('does not render protected pasted skill or plugin tokens either', () => {
+    // The same marker protects the other two categories: a pasted `@skill:` line is
+    // text the user pasted, not a reference they committed.
+    const draft = protectPastedMentions('@skill:blender-modeling @plugin:dsh-atlas')
+    const { root, container } = mount(<FilesDock {...props({ draft })} />)
+    expect(container.querySelectorAll('[data-atlas-row]')).toHaveLength(0)
+    root.unmount()
+  })
+
   it('hides the strip while the settings switch is off', () => {
     const { root, container } = mount(<FilesDock {...props({ draft: '@a.ts', enabled: false })} />)
     expect(container.querySelectorAll('[data-atlas-row]')).toHaveLength(0)

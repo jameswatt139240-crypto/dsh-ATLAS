@@ -1,7 +1,7 @@
 /** Built-in file icon classification and SVG rendering. */
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { fileIcon, fileIconKind, menuGlyphColor, type FileIconKind } from '../src/client/icons.tsx'
+import { fileIcon, fileIconKind, leafIcon, menuGlyphColor, type FileIconKind } from '../src/client/icons.tsx'
 import type { FileEntry } from '../src/client/remote.ts'
 
 function entry(relative: string, kind: 'file' | 'dir' = 'file'): FileEntry {
@@ -59,6 +59,24 @@ describe('file icons', () => {
       expect(markup).toContain('width="28"')
       expect(markup).toContain(`data-file-icon="${kind}"`)
     }
+  })
+})
+
+describe('leaf rows and extensionless files', () => {
+  it('draws the same glyph for a leaf row as for its category', () => {
+    // The leaf slot used to be blank; it now carries the category's own glyph at
+    // the smaller leaf size.
+    expect(renderToStaticMarkup(leafIcon('skill'))).toContain('width="36"')
+    expect(renderToStaticMarkup(leafIcon('chat'))).toContain('width="28"')
+    expect(renderToStaticMarkup(leafIcon('plugin'))).toContain('width="28"')
+  })
+
+  it('gives a code file with no extension no language brand', () => {
+    // `Makefile` is recognised by name; a name that is neither known nor dotted
+    // has no brand to offer.
+    const markup = renderToStaticMarkup(fileIcon(entry('BUILD')))
+    expect(markup).not.toContain('tabler-icon-brand')
+    expect(markup).toContain('tabler-icon')
   })
 })
 
