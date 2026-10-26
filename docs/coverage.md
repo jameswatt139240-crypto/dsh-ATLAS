@@ -85,6 +85,41 @@ caller sharing an in-flight promise, retired-client fallbacks, the folder picker
 | `src/client/history-frames.ts` | 1 | 353 |
 | `src/client/session-link.ts` | 1 | 95 |
 
+### 2c. Gap register — what is left, and which kind of gap it is
+
+Three kinds, kept apart on purpose. Nothing in groups B or C is claimed to be
+unreachable: they are **unfinished**, and are recorded as such.
+
+**A. Unreachable in this environment (evidence given).**
+
+| Site | Why it cannot run here |
+|---|---|
+| `src/runtime.ts:275`, `src/runtime.ts:407` | The ancestor walk's Windows-only ends: on POSIX every ancestor chain terminates at an existing `/`, so `nearestDirectory` never returns undefined and `above === candidate` never holds. Measured: `'Z:/no/such/place'` is resolved as a relative path on POSIX, which lands in `outside`, not `missing`. |
+| `src/contract.ts:34` | `strictCodec().create` is called by the Harness's own codec validator when it boots a schema. No test in this repo runs that validator; exercising it means standing up a Harness profile inside the suite. |
+
+**B. Reachable, needs a fault-injection or timing fixture that has not been written.**
+
+`src/client/index.ts` (remote refusal branches: `gitChanges` 425–427, `open` 432, the
+`scopeFolder` probe 750/758/760/763, the folder-tab faces 1468…), `src/client/source.ts`
+(the external fetch's abort/stale arms 1141/1147/1148, the scope listing 1563, the
+category rebuild arms 1668–1775, the alphabetical plugin sort 860), `src/git.ts:62`
+(`execFile` throwing synchronously), `src/client/FolderPicker.tsx` (aborted probes
+359/383/390), `src/client/DraftLinks.tsx`, `src/client/ReferenceLinks.tsx`,
+`src/client/FrameCursor.tsx`, `src/client/SettingsSection.tsx`, `src/client/FolderTab.tsx`,
+`src/index.ts`, `src/runtime.ts`, `src/recent-folders.ts`, `src/client/AdPanel.tsx`,
+`src/client/draft-links.ts`, `src/client/draft-scope.ts`, `src/client/history-frames.ts`,
+`src/client/session-link.ts`.
+
+**C. Defensive guards for a render state the unit harness cannot produce.**
+
+`src/client/FolderPicker.tsx:283` (focus effect with no input on screen), `:564` (a row
+list with no focusable entry at all — both group headers are focusable, so an empty
+folder still has two), `:582`, `:603` (page-turn with no row to reach), `:666`, `:669`
+(Tab trap with nothing focusable inside the dialog), `:689`.
+
+The line-level table above is regenerated from `coverage-final.json` on every run, so this
+register never drifts from the measurement.
+
 ### 2b. Attempt log (dead ends, so they are not repeated)
 
 - **`source.rebuildRows` cannot be reached from `tests/source.spec.ts` today.** A probe that settles
