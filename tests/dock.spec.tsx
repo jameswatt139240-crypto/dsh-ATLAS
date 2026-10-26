@@ -107,6 +107,12 @@ describe('draftMentions', () => {
     expect(mentions[4]).toMatchObject({ kind: 'chat', label: 'Payment rates' })
   })
 
+  it('reads a scoped plugin name as one row and invents no path for its scope (m05904)', () => {
+    expect(draftMentions('@plugin:@sidequest-007/dsh-atlas')).toEqual([
+      { kind: 'plugin', key: 0, label: '@sidequest-007/dsh-atlas', start: 0, end: 32 },
+    ])
+  })
+
   it('ignores category prefixes in the dock', () => {
     expect(draftMentions('@file:src/a.ts')).toEqual([])
   })

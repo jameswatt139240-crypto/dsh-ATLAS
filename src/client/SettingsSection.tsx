@@ -1,8 +1,17 @@
 /** Settings section for global and workspace-specific file filter rules. */
 import type { PropsLocale, PropsRuntime, InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
+// Type-only: the shared snapshot selectors this section reads (see standard-kit.ts).
+import type {} from './standard-kit.ts'
 import { useEffect, useMemo, useState, type ReactElement } from 'react'
 import { IconPlus, IconX } from '@tabler/icons-react'
-import type { AtFileSettings, FileIgnoreRule, FileIgnoreRuleInput, FolderOpenTarget } from '../contract.ts'
+import type {
+  AtFileSettings,
+  FileIgnoreRule,
+  FileIgnoreRuleInput,
+  FolderOpenTarget,
+  HistoryFrameMode,
+  HistoryReuseMode,
+} from '../contract.ts'
 import type { AtFileSettingsSource } from './FilesDock.tsx'
 import type { AtFileKey } from './locales.ts'
 import {
@@ -33,6 +42,14 @@ export interface AtFileSectionInjected {
   setEnablePlugins: (enablePlugins: boolean) => Promise<void>
   setIgnorePastedMentions: (ignore: boolean) => Promise<void>
   setFolderOpen: (target: FolderOpenTarget) => Promise<void>
+  /** Enable or disable the session history jump (palette + roaming). */
+  setHistoryJump: (enabled: boolean) => Promise<void>
+  /** Choose the history frame granularity. */
+  setHistoryJumpFrames: (mode: HistoryFrameMode) => Promise<void>
+  /** Choose how reusing a history message treats the current draft. */
+  setHistoryJumpReuseMode: (mode: HistoryReuseMode) => Promise<void>
+  /** Choose whether the history walk follows the user's own scroll position. */
+  setHistoryJumpSmartFollow: (enabled: boolean) => Promise<void>
   setIgnoreFiles: (ignoreFiles: readonly FileIgnoreRuleInput[]) => Promise<void>
   setWorkspaceIgnoreFiles: (workspace: string, ignoreFiles: readonly FileIgnoreRuleInput[]) => Promise<void>
 }
@@ -112,6 +129,10 @@ export function AtFileSection({
   setEnablePlugins,
   setIgnorePastedMentions,
   setFolderOpen,
+  setHistoryJump,
+  setHistoryJumpFrames,
+  setHistoryJumpReuseMode,
+  setHistoryJumpSmartFollow,
   setIgnoreFiles,
   setWorkspaceIgnoreFiles,
   t,
@@ -122,7 +143,10 @@ export function AtFileSection({
   const enableChats = settings?.enableChats ?? true
   const enablePlugins = settings?.enablePlugins ?? true
   const ignorePastedMentions = settings?.ignorePastedMentions ?? true
-  const folderOpen = settings?.folderOpen ?? 'both'
+  const historyJump = settings?.historyJump ?? true
+  const historyJumpFrames = settings?.historyJumpFrames ?? 'turn'
+  const historyJumpReuseMode = settings?.historyJumpReuseMode ?? 'replace'
+  const historyJumpSmartFollow = settings?.historyJumpSmartFollow ?? false
   const globalFiles = normalizeIgnoreFiles(settings?.ignoreFiles ?? DEFAULT_IGNORE_FILES)
   const workspaceRules = settings?.workspaceIgnoreFiles ?? []
   const workspaces = useWorkspaces(snapshot => snapshot.items)
@@ -299,23 +323,77 @@ export function AtFileSection({
           <span className="dsh_atFile_cardDesc">{t('settings.ignorePastedMentionsDesc')}</span>
         </span>
       </label>
+      {/* A-16.7: the folder-open card is GONE. Its subject — whether a referenced
+          folder opens in the sidebar, locally, or both — is no longer a choice:
+          a folder reference always opens in the sidebar alone, and the persisted
+          `folderOpen` field stays only so old installs keep their stored shape. */}
+      {/* A-23: the history settings are SPLIT by which shortcut they belong to. The
+          two features are independent ("两个功能都是独立的快捷键"), so a row that
+          applies to both must not sit inside one feature's block — the user read the
+          shared rows as belonging to whichever feature they happened to follow. */}
+      <div className="dsh_atFile_groupTitle">{t('settings.historyGroup.shared')}</div>
+      <div className="dsh_atFile_groupDesc">{t('settings.historyGroup.sharedDesc')}</div>
+      <label className="dsh_atFile_card">
+        <input
+          type="checkbox"
+          className="dsh_atFile_checkbox"
+          checked={historyJump}
+          onChange={event => { void setHistoryJump(event.target.checked) }}
+        />
+        <span className="dsh_atFile_cardText">
+          <span className="dsh_atFile_cardTitle">{t('settings.historyJump')}</span>
+          <span className="dsh_atFile_cardDesc">{t('settings.historyJumpDesc')}</span>
+        </span>
+      </label>
       <label className="dsh_atFile_card dsh_atFile_cardSelect">
         <span className="dsh_atFile_cardText">
-          <span className="dsh_atFile_cardTitle">{t('settings.folderOpen')}</span>
-          <span className="dsh_atFile_cardDesc">{t('settings.folderOpenDesc')}</span>
+          <span className="dsh_atFile_cardTitle">{t('settings.historyJumpFrames')}</span>
+          <span className="dsh_atFile_cardDesc">{t('settings.historyJumpFramesDesc')}</span>
         </span>
         <select
           className="dsh_atFile_folderOpenSelect"
-          value={folderOpen}
-          disabled={saving}
-          aria-label={t('settings.folderOpen')}
-          onChange={event => { void setFolderOpen(event.target.value as FolderOpenTarget) }}
+          value={historyJumpFrames}
+          disabled={saving || !historyJump}
+          aria-label={t('settings.historyJumpFrames')}
+          onChange={event => { void setHistoryJumpFrames(event.target.value as HistoryFrameMode) }}
         >
-          <option value="both">{t('settings.folderOpen.both')}</option>
-          <option value="sidebar">{t('settings.folderOpen.sidebar')}</option>
-          <option value="native">{t('settings.folderOpen.native')}</option>
+          <option value="message">{t('settings.historyJumpFrames.message')}</option>
+          <option value="turn">{t('settings.historyJumpFrames.turn')}</option>
         </select>
       </label>
+      <label className="dsh_atFile_card dsh_atFile_cardSelect">
+        <span className="dsh_atFile_cardText">
+          <span className="dsh_atFile_cardTitle">{t('settings.historyJumpReuseMode')}</span>
+          <span className="dsh_atFile_cardDesc">{t('settings.historyJumpReuseModeDesc')}</span>
+        </span>
+        <select
+          className="dsh_atFile_folderOpenSelect"
+          value={historyJumpReuseMode}
+          disabled={saving || !historyJump}
+          aria-label={t('settings.historyJumpReuseMode')}
+          onChange={event => { void setHistoryJumpReuseMode(event.target.value as HistoryReuseMode) }}
+        >
+          <option value="replace">{t('settings.historyJumpReuseMode.replace')}</option>
+          <option value="append">{t('settings.historyJumpReuseMode.append')}</option>
+        </select>
+      </label>
+      <div className="dsh_atFile_groupTitle">{t('settings.historyGroup.roam')}</div>
+      <div className="dsh_atFile_groupDesc">{t('settings.historyGroup.roamDesc')}</div>
+      <label className="dsh_atFile_card">
+        <input
+          type="checkbox"
+          className="dsh_atFile_checkbox"
+          checked={historyJumpSmartFollow}
+          disabled={saving || !historyJump}
+          onChange={event => { void setHistoryJumpSmartFollow(event.target.checked) }}
+        />
+        <span className="dsh_atFile_cardText">
+          <span className="dsh_atFile_cardTitle">{t('settings.historyJumpSmartFollow')}</span>
+          <span className="dsh_atFile_cardDesc">{t('settings.historyJumpSmartFollowDesc')}</span>
+        </span>
+      </label>
+      <div className="dsh_atFile_groupTitle">{t('settings.historyGroup.quick')}</div>
+      <div className="dsh_atFile_groupDesc">{t('settings.historyGroup.quickDesc')}</div>
       <div className="dsh_atFile_filter">
         <div className="dsh_atFile_filterHeading">
           <div className="dsh_atFile_filterHeadingText">

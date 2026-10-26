@@ -215,6 +215,22 @@ export declare function categoryTag(kind: 'file' | 'folder' | 'skill' | 'chat' |
 export declare function backRow(t?: Translate): MentionCandidate;
 /** A non-pickable section divider row (e.g. 最近引用 / 全部匹配). */
 export declare function sectionHeaderRow(label: string): MentionCandidate;
+/**
+ * A non-pickable row saying the workspace index could not be read.
+ *
+ * Without it a failed index and a query that genuinely matches nothing render the
+ * SAME menu: the file rows are simply absent, and the user is left to conclude the
+ * plugin is broken or that the file does not exist. Reported from Linux as "typing
+ * letters after @ shows nothing", which is exactly this collapse — the index fetch
+ * threw (a workspace on a mount the process cannot read, a session with no `cwd`)
+ * and the catch answered `[]`, which is indistinguishable from "no match".
+ *
+ * It is a reason row, not an error dialog: browsing still works, other categories
+ * still answer, and the row only says why the file rows are missing. It carries
+ * `browse-note` — the kind the browser already uses for "a fact you must read and
+ * cannot pick" — so the navigator needs no new case.
+ */
+export declare function indexFailureRow(reason: string): MentionCandidate;
 /** Relative-time buckets, mirroring the sidebar workspace rows. */
 export interface RelativeTime {
     readonly unit: 'now' | 'minutes' | 'hours' | 'days' | 'months' | 'years';

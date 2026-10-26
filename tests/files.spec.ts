@@ -7,7 +7,7 @@ import { mkdtemp, mkdir, opendir, symlink, writeFile, rm } from 'node:fs/promise
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { indexWorkspace, listSubdirectories, readDirectory } from '../src/files.ts'
+import { hasSubdirectory, indexWorkspace, listSubdirectories, pinEntry, readDirectory } from '../src/files.ts'
 import { DEFAULT_IGNORE_DIRS, DEFAULT_IGNORE_FILES } from '../src/defaults.ts'
 
 /** Whether the fixture's directory symlink could be created (Windows needs Developer Mode or elevation). */
@@ -374,10 +374,22 @@ describe('listSubdirectories', () => {
       const options = { limit: 2, ignoreDirs: [] as readonly string[], skipHidden: true }
       const names = (await listSubdirectories(root, options)).map(entry => entry.slice(root.length + 1))
       expect(names).toEqual(['deepseek-harness', 'dsh-arcade'])
-      // Without the flag the same bounded listing is spent on dot-names, which is
-      // exactly the behaviour the flag exists to replace (not an accident).
-      const unfiltered = await listSubdirectories(root, { limit: 2, ignoreDirs: [] })
-      expect(unfiltered.map(entry => entry.slice(root.length + 1))).toEqual(['.cache-0', '.cache-1'])
+      // Without the flag every dot-name is still offered, which is exactly the
+      // behaviour the flag exists to replace (not an accident). The limit covers
+      // the whole fixture and the comparison sorts: readdir order belongs to the
+      // file system, not to the alphabet, so a two-entry window would assert
+      // whatever the directory happened to hand back first.
+      const unfiltered = await listSubdirectories(root, { limit: 8, ignoreDirs: [] })
+      expect(unfiltered.map(entry => entry.slice(root.length + 1)).sort()).toEqual([
+        '.cache-0',
+        '.cache-1',
+        '.cache-2',
+        '.cache-3',
+        '.cache-4',
+        '.cache-5',
+        'deepseek-harness',
+        'dsh-arcade',
+      ])
     } finally {
       await rm(root, { recursive: true, force: true })
     }
@@ -486,6 +498,195 @@ describe('readDirectory', () => {
       expect(entries.find(entry => entry.name === 'linked')).toEqual({ name: 'linked', kind: 'dir' })
     } finally {
       await rm(root, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('pinEntry', () => {
+  it('puts back the one entry the cap cut away, ahead of the page', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-atlas-pin-'))
+    try {
+      await writeFile(join(root, 'a.txt'), 'x\n')
+      await writeFile(join(root, 'b.txt'), 'x\n')
+      await writeFile(join(root, 'c.txt'), 'x\n')
+      // A cap of ONE reproduces the real defect exactly: the cap is applied BEFORE
+      // the sort, so the page holds one arbitrary row and two thirds of the folder
+      // is simply absent — which is what hid the selected row on a 2093-entry share.
+      const page = await readDirectory(root, 1)
+      expect(page.entries).toHaveLength(1)
+      expect(page.truncated).toBe(true)
+      const omitted = ['a.txt', 'b.txt', 'c.txt'].find(
+        name => page.entries.every(entry => entry.name !== name),
+      )!
+      const pinned = await pinEntry(root, page, omitted)
+      expect(pinned.entries[0]).toEqual({ name: omitted, kind: 'file', pinned: true })
+      // It goes FIRST and it is the ONLY addition: the page it completes is intact.
+      expect(pinned.entries.slice(1)).toEqual(page.entries)
+      // Completion does not pretend the folder was fully listed.
+      expect(pinned.truncated).toBe(true)
+      // The row it put back is what a caller looks for, so the search still works.
+      expect(pinned.entries.filter(entry => entry.name === omitted)).toHaveLength(1)
+      // A row the page ALREADY holds is left exactly as it was, by identity.
+      expect(await pinEntry(root, page, page.entries[0]!.name)).toBe(page)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('adds no row for a name that is gone, a walk, or a blank', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-atlas-pinmiss-'))
+    try {
+      await writeFile(join(root, 'kept.txt'), 'x\n')
+      await mkdir(join(root, 'sub'))
+      const page = await readDirectory(root, 20)
+      // The entry no longer exists: the listing must not invent a row for it. This
+      // is A.16.5.5 — a second click on a deleted object still opens the folder,
+      // and the folder then says the truth about what is in it.
+      expect(await pinEntry(root, page, 'deleted.txt')).toBe(page)
+      // Only ONE path segment is a child of this directory. Everything else would
+      // let a caller reach outside the directory that was listed.
+      expect(await pinEntry(root, page, '')).toBe(page)
+      expect(await pinEntry(root, page, '.')).toBe(page)
+      expect(await pinEntry(root, page, '..')).toBe(page)
+      expect(await pinEntry(root, page, 'sub/kept.txt')).toBe(page)
+      expect(await pinEntry(root, page, 'sub\\kept.txt')).toBe(page)
+      // A directory is pinned as a directory, judged by the filesystem and not by
+      // the caller: the folder tab passes a name, never a kind.
+      const nested = await readDirectory(join(root, 'sub'), 20)
+      await mkdir(join(root, 'sub', 'deeper'))
+      expect((await pinEntry(join(root, 'sub'), nested, 'deeper')).entries[0])
+        .toEqual({ name: 'deeper', kind: 'dir', pinned: true })
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('stops when the caller is already gone', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-atlas-pinabort-'))
+    try {
+      await writeFile(join(root, 'a.txt'), 'x\n')
+      await writeFile(join(root, 'b.txt'), 'x\n')
+      const page = await readDirectory(root, 1)
+      const omitted = ['a.txt', 'b.txt'].find(
+        name => page.entries.every(entry => entry.name !== name),
+      )!
+      const controller = new AbortController()
+      controller.abort()
+      await expect(pinEntry(root, page, omitted, controller.signal)).rejects.toThrow()
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('hasSubdirectory', () => {
+  /** One fake dirent: only the three predicates the probe calls. */
+  const dirent = (name: string, kind: 'dir' | 'file'): Dirent => ({
+    name,
+    isDirectory: () => kind === 'dir',
+    isSymbolicLink: () => false,
+  }) as unknown as Dirent
+
+  /** A fake `Dir` that answers the given entries in order and records the reads. */
+  function fakeHandle(entries: readonly (Dirent | null)[], failure?: Error) {
+    const reads = { count: 0, closed: false }
+    const handle = {
+      async read(): Promise<Dirent | null> {
+        if (failure !== undefined && reads.count === 0) {
+          reads.count += 1
+          throw failure
+        }
+        const entry = entries[reads.count] ?? null
+        reads.count += 1
+        return entry
+      },
+      async close(): Promise<void> { reads.closed = true },
+    }
+    return { handle: handle as unknown as Dir, reads }
+  }
+
+  it('answers true for a folder that holds one, and false for an empty one', async () => {
+    const root = await fixture()
+    try {
+      expect(await hasSubdirectory(join(root, 'src'))).toBe(true)
+      expect(await hasSubdirectory(join(root, 'empty'))).toBe(false)
+      // A file's children are not directories either, but the fixture's root has one,
+      // so the false case above is the empty directory — the one that must NOT draw
+      // an expander, which is the whole reason this call exists.
+      expect(await hasSubdirectory(join(root, 'src', 'client'))).toBe(false)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('counts a link to a folder, and does not count a link to a file', async (context) => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-atlas-haslink-'))
+    try {
+      await mkdir(join(root, 'only-links'))
+      await mkdir(join(root, 'real'))
+      await writeFile(join(root, 'a.txt'), 'x')
+      if (!await createLink(join(root, 'real'), join(root, 'only-links', 'to-dir'))) return context.skip()
+      // A broken link probe leaves the flag off rather than throwing: this call may not
+      // fail the whole listing because one entry is unusual.
+      await symlink(join(root, 'a.txt'), join(root, 'only-links', 'to-file'), 'file').catch(() => {})
+      expect(await hasSubdirectory(join(root, 'only-links'))).toBe(true)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('drops dot-names before they count when asked to skip hidden children', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-atlas-hashidden-'))
+    try {
+      await mkdir(join(root, 'level', '.hidden-child'), { recursive: true })
+      // Which of the hidden rows are DRAWN is the chooser's own setting; the flag
+      // answers "is there anything below" under that same setting.
+      expect(await hasSubdirectory(join(root, 'level'), { skipHidden: true })).toBe(false)
+      expect(await hasSubdirectory(join(root, 'level'))).toBe(true)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('returns on the first folder instead of reading the whole directory', async () => {
+    const { handle, reads } = fakeHandle([dirent('README.md', 'file'), dirent('src', 'dir'), dirent('later', 'dir'), null])
+    expect(await hasSubdirectory('/nowhere', {}, undefined, async () => handle)).toBe(true)
+    // Two reads: one file skipped, one folder that answered. Reading further would be
+    // the cost `readDirectory` already pays and this call exists to avoid.
+    expect(reads.count).toBe(2)
+    expect(reads.closed).toBe(true)
+  })
+
+  it('answers false after walking to the end without meeting a folder', async () => {
+    const { handle, reads } = fakeHandle([dirent('a.txt', 'file'), dirent('b.txt', 'file'), null])
+    expect(await hasSubdirectory('/nowhere', {}, undefined, async () => handle)).toBe(false)
+    expect(reads.count).toBe(3)
+    expect(reads.closed).toBe(true)
+  })
+
+  it('names the directory when it cannot be opened at all', async () => {
+    const root = await fixture()
+    try {
+      await expect(hasSubdirectory(join(root, 'missing'))).rejects.toThrow(
+        /at-file: cannot list "/u,
+      )
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('survives a read failure mid-walk and says so once', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const { handle, reads } = fakeHandle([], new Error('EIO'))
+      // A row left without the flag is a row the chooser may still probe; a thrown
+      // error here would take the whole listing down with one bad entry.
+      expect(await hasSubdirectory('/nowhere', {}, undefined, async () => handle)).toBe(false)
+      expect(reads.closed).toBe(true)
+      expect(warn).toHaveBeenCalledTimes(1)
+      expect(String(warn.mock.calls[0]?.[0])).toContain('/nowhere')
+    } finally {
+      warn.mockRestore()
     }
   })
 })

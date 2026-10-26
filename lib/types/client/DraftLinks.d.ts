@@ -5,8 +5,18 @@ import type { SessionLabelResolver } from './session-link.ts';
 import type { ReferenceOutcome } from './ReferenceLinks.tsx';
 /** What the session's overlay shares with the draft bridge. */
 export interface DraftLinksInjected {
-    /** The action a click on this mention performs, or undefined when this build has none. */
-    readonly actionFor: (link: ReferenceLink) => (() => ReferenceOutcome | Promise<ReferenceOutcome>) | undefined;
+    /**
+     * The action a click on this mention performs, or undefined when this build
+     * has none. `again` is true for the SECOND click on the same object, which is
+     * what makes a folder token in the composer answer exactly like the dock's own
+     * row (A-27): the first click opens it in the right Sidebar, the second hands
+     * it to the desktop's file manager.
+     */
+    readonly actionFor: (link: ReferenceLink, again?: boolean) => (() => ReferenceOutcome | Promise<ReferenceOutcome>) | undefined;
+    /** Whether the plugin's click ledger records this link as the last one opened. */
+    readonly repeatClick: (link: ReferenceLink) => boolean;
+    /** Record this click in that ledger, which flips: the same link again is a new first click. */
+    readonly noteClick: (link: ReferenceLink) => void;
     /** The dock's own inspection verdicts: the bridge never re-asks for the same path. */
     readonly hooks: {
         readonly referenceInfo: ReferenceInfoSource;
@@ -26,4 +36,4 @@ export type DraftLinksProps = PropsRuntime<'conversation.input.overlay'> & Injec
  * @param props - the injected opener and the dock's verdict source.
  * @returns nothing; this entry renders no DOM of its own.
  */
-export declare function DraftLinks({ actionFor, useReferenceInfo, resolveSession }: DraftLinksProps): null;
+export declare function DraftLinks({ actionFor, repeatClick, noteClick, useReferenceInfo, resolveSession }: DraftLinksProps): null;

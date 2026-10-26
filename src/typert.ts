@@ -54,6 +54,11 @@ export const TYPERT_MANIFEST: TypertContribution = {
             name: 'list',
             signature: 'list(agent: Agent, path: string, signal: AbortSignal): Promise<DirectoryListing>',
           },
+          {
+            kind: 'method',
+            name: 'recentFolders',
+            signature: 'recentFolders(agent: Agent, signal: AbortSignal): Promise<readonly RecentFolder[]>',
+          },
         ],
         types: [],
       },

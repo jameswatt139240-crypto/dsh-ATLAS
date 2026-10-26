@@ -51,7 +51,7 @@ describe('inspectReferences', () => {
     }
   })
 
-  it('refuses absolute and workspace-escaping targets', async () => {
+  it('accepts an absolute target inside the workspace and refuses escaping ones', async () => {
     const root = await workspace()
     await writeFile(join(root, 'a.ts'), 'x')
     try {
@@ -60,10 +60,16 @@ describe('inspectReferences', () => {
         [join(root, 'a.ts'), '../outside.ts'],
         new AbortController().signal,
       )
-      expect(infos).toEqual([
-        { relative: join(root, 'a.ts'), exists: false },
-        { relative: '../outside.ts', exists: false },
-      ])
+      // The absolute spelling of a workspace file IS a workspace file (m05904): the
+      // desktop hands the plugin exactly such paths (`/mnt/...` on the guest,
+      // `E:\...` here), and refusing them painted the dock's reference stale for a
+      // file the user could see. `relative` keeps the path exactly as it was typed,
+      // because that string is what keys the composer chip (`DraftLinks.tsx` matches
+      // the row back to its token through it).
+      expect(infos[0]).toEqual({ relative: join(root, 'a.ts'), exists: true, kind: 'file', size: 1 })
+      // A path that climbs out of the workspace is still refused, with no access
+      // granted here at all.
+      expect(infos[1]).toEqual({ relative: '../outside.ts', exists: false })
     } finally {
       await rm(root, { recursive: true, force: true })
     }

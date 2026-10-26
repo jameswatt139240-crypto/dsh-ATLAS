@@ -4,7 +4,19 @@
  * a file reference may carry a `:start[-end]` line range. The Host bundle and
  * the client bundle are built separately, so this module is the single
  * implementation of the recognition rule they must agree on.
+ *
+ * ONE form breaks that run. A plugin is named by its npm MODULE name, and a
+ * scoped module name carries an `@` of its own: `@plugin:@sidequest-007/dsh-atlas`.
+ * That inner `@` belongs to the name, not to a second mention. Reading it as a
+ * token start splits the mention in two — the plugin is then never recognized,
+ * and the scope (`sidequest-007/dsh-atlas`) is scanned as a workspace PATH that
+ * does not exist (m05904). So the plugin form is tried FIRST everywhere a token
+ * is scanned, and it swallows the scope whole.
  */
+/** Every `@` mention token in a text, captured without the `@`. */
+export declare const MENTION_PATTERN: RegExp;
+/** The `@plugin:<module>` tokens in a text, captured without the `@plugin:` prefix. */
+export declare const PLUGIN_MENTION_PATTERN: RegExp;
 /** One inclusive 1-based line range on a referenced file. */
 export interface LineRange {
     readonly start: number;

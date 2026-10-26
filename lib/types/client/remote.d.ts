@@ -9,8 +9,8 @@
 import type { RemoteResult, TypertRemoteContribution } from '@deepseek-ai/dsh-typert-protocol';
 import type { SessionId } from '@deepseek-ai/dsh-session/types';
 import type { AtlasRuntimeInfo } from '../atlas.ts';
-import type { AtFileSettings, AtFileSettingsUpdate, ChatCandidate, DirectoryListing, GitChange, PluginCandidate, ReferenceInfo, SkillCandidate } from '../contract.ts';
-export type { DirectoryEntry, DirectoryListing, FileEntry, SkillCandidate, ChatCandidate, PluginCandidate, GitChange } from '../contract.ts';
+import type { AtFileSettings, AtFileSettingsUpdate, BrowseListing, ChatCandidate, DirectoryListing, GitChange, PluginCandidate, RecentFolder, ReferenceInfo, SkillCandidate } from '../contract.ts';
+export type { DirectoryEntry, DirectoryListing, FileEntry, SkillCandidate, ChatCandidate, PluginCandidate, GitChange, RecentFolder, RecentFolderReason } from '../contract.ts';
 /** The combined Remote namespace contribution (one package face). */
 export declare const AT_REMOTE: TypertRemoteContribution;
 declare module '@deepseek-ai/dsh-typert-protocol' {
@@ -20,7 +20,9 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
         inspect: (agentId: SessionId, targets: readonly string[], signal?: AbortSignal) => Promise<RemoteResult<readonly ReferenceInfo[]>>;
         getSettings: () => Promise<RemoteResult<AtFileSettings>>;
         updateSettings: (update: AtFileSettingsUpdate) => Promise<RemoteResult<AtFileSettings>>;
-        list: (agentId: SessionId, path: string, signal?: AbortSignal) => Promise<RemoteResult<DirectoryListing>>;
+        list: (agentId: SessionId, path: string, include: string, signal?: AbortSignal) => Promise<RemoteResult<DirectoryListing>>;
+        browse: (agentId: SessionId, path: string, signal?: AbortSignal) => Promise<RemoteResult<BrowseListing>>;
+        recentFolders: (agentId: SessionId, signal?: AbortSignal) => Promise<RemoteResult<readonly RecentFolder[]>>;
     }
     /** The `atlas` namespace face (host half of the @ data-source seam). */
     interface TypertRemoteNamespace$61746c6173 {
@@ -37,7 +39,9 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
         'atFile/search': (agentId: SessionId, signal?: AbortSignal) => Promise<RemoteResult<readonly import('../contract.ts').FileEntry[]>>;
         'atFile/inspect': (agentId: SessionId, targets: readonly string[], signal?: AbortSignal) => Promise<RemoteResult<readonly ReferenceInfo[]>>;
         'atFile/external': (agentId: SessionId, signal?: AbortSignal) => Promise<RemoteResult<import('../contract.ts').ExternalAccessScope>>;
-        'atFile/list': (agentId: SessionId, path: string, signal?: AbortSignal) => Promise<RemoteResult<DirectoryListing>>;
+        'atFile/list': (agentId: SessionId, path: string, include: string, signal?: AbortSignal) => Promise<RemoteResult<DirectoryListing>>;
+        'atFile/browse': (agentId: SessionId, path: string, signal?: AbortSignal) => Promise<RemoteResult<BrowseListing>>;
+        'atFile/recentFolders': (agentId: SessionId, signal?: AbortSignal) => Promise<RemoteResult<readonly RecentFolder[]>>;
         'atFile/getSettings': () => Promise<RemoteResult<AtFileSettings>>;
         'atFile/updateSettings': (update: AtFileSettingsUpdate) => Promise<RemoteResult<AtFileSettings>>;
         'atMention/listSkills': (agentId: SessionId, signal?: AbortSignal) => Promise<RemoteResult<readonly SkillCandidate[]>>;

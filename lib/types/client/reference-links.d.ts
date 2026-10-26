@@ -26,6 +26,16 @@ export type ReferenceLink = {
     readonly sessionId: string;
 };
 /**
+ * Is this mention body spelled with a handle that names a label rather than a
+ * resource? Callers that read a raw token (the chip decoder, the draft's own
+ * path resolver) must skip these: the scope inside a scoped plugin mention is
+ * part of the module name, and reading it as a path invents a file that no
+ * workspace holds (m05904).
+ * @param raw - the mention body, without its leading `@`.
+ * @returns true when the body is one of our inert handles.
+ */
+export declare function isInertHandle(raw: string): boolean;
+/**
  * Decode one reference chip's raw label (its `title`) into the action it offers.
  *
  * The chip's own `title` is the label the framework decorated, verbatim:
@@ -107,6 +117,53 @@ export declare function absoluteFileAddress(path: string): string;
  * @returns the folder address this plugin's tab claims.
  */
 export declare function folderAddress(path: string): string;
+/**
+ * What a folder tab is told to select when it opens.
+ *
+ * A folder tab is opened by ADDRESS, and an address is the tab's identity — a
+ * second open of the same folder must not open a second tab — so the thing to
+ * select cannot ride the address itself (it is not part of the folder's name,
+ * and the tab's own title reads the address). It rides the open options instead:
+ * `openResource(address, { params })` lands them on `tab.navigation.params`, a
+ * value the tab re-reads on every navigation. This plugin owns the `folder`
+ * resource type, so it also owns the shape of that value: {@link selectionOf} is
+ * the single reader of the key below.
+ */
+export interface FolderSelectionParams {
+    /** The name (one path segment) of the child to select in the opened folder. */
+    readonly select?: string;
+}
+/**
+ * The folder a path LIVES IN, plus the name to select in it.
+ *
+ * "Click a reference twice and you get its owning folder, with the reference
+ * selected" — so this answers the pair, for a file and for a folder alike (a
+ * folder's own owning folder is its parent). Purely lexical on purpose: it must
+ * answer for a path whose neighbours are unknown, and the caller is the one that
+ * knows how to turn a relative answer into an absolute path.
+ * @param path - the reference path, either separator spelling.
+ * @returns the parent directory in canonical (forward-slash) spelling (`''` = the
+ * top of a relative path, `/` for the POSIX root, `E:/` for a drive root) and the
+ * segment to select there. The spelling is normalized for the same reason
+ * {@link folderAddress} normalizes it: the answer is compared against index keys
+ * and turned into an address, and both of those speak one spelling.
+ */
+export declare function owningFolderOf(path: string): {
+    readonly dir: string;
+    readonly select: string;
+};
+/**
+ * The child one folder tab was told to select, or undefined when it was told
+ * nothing.
+ *
+ * Reads `unknown` rather than {@link FolderSelectionParams} because the value
+ * arrives from the product's navigation state, which this plugin does not own:
+ * a stale or foreign navigation must read as "nothing to select", never as a
+ * crash or as a wrong row.
+ * @param params - `tab.navigation.params`, as delivered.
+ * @returns the segment to select, or undefined.
+ */
+export declare function selectionOf(params: unknown): string | undefined;
 /**
  * The folder one address names, or undefined when it is not ours.
  * @param address - a resource address.

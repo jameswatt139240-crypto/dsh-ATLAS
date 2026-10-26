@@ -42,15 +42,15 @@ export interface Config {
  * partial input, so `Config({})` yields the defaults (what the Loader does
  * for Loader compositions).
  */
-export declare const Config: z<Schemastery.ObjectS<{
-    maxIndexedFiles: z<number, number>;
-    ignoreDirs: z<string[], string[]>;
-    injectSkillBody: z<boolean, boolean>;
-}>, Schemastery.ObjectT<{
-    maxIndexedFiles: z<number, number>;
-    ignoreDirs: z<string[], string[]>;
-    injectSkillBody: z<boolean, boolean>;
-}>>;
+export declare const Config: z<Schemastery.ObjectS<NoInfer<{
+    maxIndexedFiles: z<number, number, "defined">;
+    ignoreDirs: z<string[], string[], "defined">;
+    injectSkillBody: z<boolean, boolean, "defined">;
+}>>, Schemastery.ObjectT<NoInfer<{
+    maxIndexedFiles: z<number, number, "defined">;
+    ignoreDirs: z<string[], string[], "defined">;
+    injectSkillBody: z<boolean, boolean, "defined">;
+}>>, "plain">;
 /** Providers whose bundled skills are system skills (same set as the sidebar Skill Manager). */
 export declare const SYSTEM_BUNDLED_PROVIDERS: Set<string>;
 /**

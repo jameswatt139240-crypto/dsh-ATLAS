@@ -91,6 +91,14 @@ describe('scanMentions', () => {
     expect(scanMentions('@a.ts again @a.ts')).toEqual(['a.ts'])
   })
 
+  it('reads a scoped plugin name as ONE token instead of splitting off its scope (m05904)', () => {
+    // The inner `@` belongs to the module name: reading it as a token start made
+    // the Host scan `sidequest-007/dsh-atlas` as a workspace path that never exists.
+    expect(scanMentions('try @plugin:@sidequest-007/dsh-atlas end')).toEqual(['plugin:@sidequest-007/dsh-atlas'])
+    // A bare category prefix keeps its old reading.
+    expect(scanMentions('@plugin: ')).toEqual(['plugin:'])
+  })
+
   it('skips protected pasted tokens by default and restores them when the setting is off', () => {
     const pasted = protectPastedMentions('read @a.ts')
     expect(scanMentions(pasted)).toEqual([])
@@ -251,14 +259,30 @@ describe('expandMentions', () => {
     }
   })
 
-  it('refuses tokens that escape the workspace', async () => {
+  it('accepts an absolute token inside the workspace and refuses those that escape it', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-atlas-mention-'))
     const absolute = join(root, 'inside.ts')
     await writeFile(absolute, 'x\n')
     try {
-      expect(await expandMentions([user(`read @${absolute}`)], root, new AbortController().signal)).toEqual([])
-      expect(await expandMentions([user('read @../secret.ts')], root, new AbortController().signal)).toEqual([])
-      expect(await expandMentions([user('read @src/../../secret.ts')], root, new AbortController().signal)).toEqual([])
+      // An absolute spelling of a workspace path is just another way to write it
+      // (m05904): the desktop hands the plugin exactly such paths (`/mnt/...` on the
+      // guest, `E:\...` here), so refusing them made `@/mnt/...` unusable prose. It
+      // converges on the workspace-relative spelling, which keeps one folder written
+      // two ways down to ONE reference (and out of the external ledger).
+      const injections = await expandMentions([user(`read @${absolute}`)], root, new AbortController().signal)
+      expect(injections).toHaveLength(1)
+      expect(injections[0]!.content[0]).toEqual({
+        type: 'text',
+        text: '<workspace-reference path="inside.ts" kind="file" />',
+      })
+      expect(injections[0]!.source).toEqual({ kind: 'at-file-mention', relative: 'inside.ts' })
+      // Escaping the workspace stays refused — even with FULL external access,
+      // because these spellings climb out of the workspace instead of naming an
+      // absolute location the user chose, and the out-of-workspace gate is not what
+      // stops them.
+      const full = externalAccess('danger-full-access', [])
+      expect(await expandMentions([user('read @../secret.ts')], root, new AbortController().signal, true, full)).toEqual([])
+      expect(await expandMentions([user('read @src/../../secret.ts')], root, new AbortController().signal, true, full)).toEqual([])
     } finally {
       await rm(root, { recursive: true, force: true })
     }

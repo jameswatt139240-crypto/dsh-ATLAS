@@ -155,6 +155,24 @@ export const cssText = `
   font-size: 13px;
   line-height: 20px;
 }
+/* A-23 grouping: a heading plus one explanatory line, so the rows under it cannot be
+   read as belonging to the other feature. The top rule separates the groups without
+   introducing a card, which would nest one box inside the section's own. */
+.dsh_atFile_groupTitle {
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--dsw-alias-border-secondary);
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 22px;
+}
+.dsh_atFile_groupDesc {
+  margin-top: -4px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 13px;
+  line-height: 20px;
+}
 .dsh_atFile_filter {
   display: flex;
   flex-direction: column;
@@ -765,6 +783,16 @@ export const cssText = `
 .dsh_atlas_folderRow:hover {
   background: var(--dsw-alias-interactive-bg-hover, rgba(128, 128, 128, 0.16)) !important;
 }
+/* The row the user's second click asked for (A.16). It has to read at rest, not
+   under the pointer: by the time this tab renders, the mouse is wherever it was
+   when the chip was clicked, so a hover-only look would leave the selection
+   invisible. Same token the chooser uses for its cursor row, so the two reading
+   of "this one" match. */
+.dsh_atlas_folderRowSelected,
+.dsh_atlas_folderRowSelected:hover {
+  background: var(--dsw-alias-interactive-bg-active, rgba(128, 128, 128, 0.28)) !important;
+  box-shadow: inset 2px 0 0 var(--dsw-alias-state-business-primary, #5686fe) !important;
+}
 .dsh_atlas_folderGlyph {
   display: inline-flex;
   flex: none;
@@ -867,8 +895,41 @@ export const cssText = `
   text-align: left;
   font: inherit;
 }
-.dsh_atlas_pickerRow:hover {
-  background: var(--dsw-alias-interactive-bg-hover, rgba(128, 128, 128, 0.16)) !important;
+/* The keyboard highlight. It must read as "this is where Enter goes", so it uses
+   the selected-surface token rather than the hover tint — a user driving the list
+   with the arrow keys is not pointing at anything with a mouse. Rows carry NO
+   :hover tint of their own: it stayed painted on whatever sat under a stationary
+   pointer, so paging with the arrows lit that row as well as the current one and
+   the list showed TWO current items (m05904). Pointer feedback is the same single
+   highlight: onPointerEnter moves the cursor onto the row it points at. */
+.dsh_atlas_pickerRowHot {
+  background: var(--dsw-alias-interactive-bg-active, rgba(128, 128, 128, 0.28)) !important;
+}
+.dsh_atlas_pickerRow:focus-visible {
+  outline: 2px solid var(--dsw-alias-border-focus, #4c8dff);
+  outline-offset: -2px;
+}
+/* A group header is a row that is also a heading: it toggles, it does not navigate,
+   so it reads as a label rather than as a folder. */
+.dsh_atlas_pickerGroup {
+  margin-top: 2px;
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary, #9aa4b2);
+}
+.dsh_atlas_pickerTag {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-subtle, rgba(128, 128, 128, 0.18));
+  font-size: 11px;
+  opacity: 0.75;
+}
+.dsh_atlas_pickerKeys {
+  margin: 0;
+  padding: 2px 14px 6px;
+  font-size: 11px;
+  opacity: 0.6;
 }
 .dsh_atlas_pickerGlyph {
   display: inline-flex;
@@ -881,6 +942,17 @@ export const cssText = `
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* The absolute path, trailing and dimmed: it is what distinguishes two folders with
+   the same name, so it may not push the name out of the row. */
+.dsh_atlas_pickerHint {
+  flex: none;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--dsw-alias-label-secondary, #9aa4b2);
+  font-size: 12px;
 }
 .dsh_atlas_pickerChevron {
   flex: none;
@@ -955,6 +1027,278 @@ export const cssText = `
 }
 .dsh_atlas_pickerSpacer {
   flex: 1 1 auto;
+}
+/* ---- History jump (F2 roaming, F1 palette) ---------------------------------
+   Roaming is deliberately quiet: it steps the conversation back a little and
+   lifts the frame the cursor is on, so the user sees WHERE they are without the
+   page moving. The state arrives as attributes on <html>, which keeps the
+   painting out of the component and lets a test assert it without class names. */
+html[data-atlas-roaming] [data-conversation-scroll] {
+  opacity: 0.72;
+  transition: opacity 140ms ease-out;
+}
+html[data-atlas-roaming] [data-composer-card] {
+  /* The composer keeps full weight: the draft is still what is being edited. */
+  opacity: 1;
+  box-shadow: 0 0 0 2px var(--dsw-alias-border-accent, transparent);
+}
+html[data-atlas-roaming] [data-atlas-frame-hit] {
+  /* The cursor's frame: a band plus a left rule, readable in both themes. */
+  position: relative;
+  opacity: 1;
+  background: var(--dsw-alias-bg-elevated, transparent);
+  border-radius: 8px;
+  box-shadow: 0 0 0 2px var(--dsw-alias-border-accent, transparent);
+}
+html[data-atlas-roaming] [data-atlas-frame-hit]::before {
+  content: '';
+  position: absolute;
+  inset-block: 6px;
+  inset-inline-start: 0;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--dsw-alias-border-accent, currentColor);
+}
+/* The readout naming the frame the cursor is on.
+   It renders in the conversation.input.dock slot, NOT as a floating overlay, so it is a
+   normal flex row of the composer stack: the stack is a column with a gap, which
+   is what makes it stack with the goal and todo docks instead of covering them.
+   The old position: fixed + measured-left/width + bottom: 96px arrangement existed
+   only because the overlay had no ancestor to take those from.
+
+   TWO boxes, matching the framework's own dock cards (GoalBar's .dock > .bar,
+   TodoPanel's .root): an OUTER spacer that insets the row from the stack, and an
+   INNER surface that is the visible card. Both halves are needed and the split is
+   load-bearing, because the two boxes have different widths:
+     - the outer width insets by 2 x clearance + 4 x inset from the STACK;
+     - the inner max-width caps by card-max-width - 4 x inset, i.e. to the CARD.
+   The inner cap is the half that is easy to miss and was missed here first: the
+   stack is as wide as the conversation COLUMN, while the input card inside it is
+   capped at --dsh-composer-card-max-width and merely centred. So on a wide window
+   the stack is much wider than the card (measured live: stack 1390px, card 928px),
+   and a row carrying only the outer width came out 1334px — overhanging the card
+   by roughly 200px on each side, which is exactly the overflowing-the-chat-box
+   symptom the user reported when this was a fixed overlay. Taking the numbers from
+   the variables the framework publishes is what keeps the row aligned with where
+   the framework puts its own docks, at every window width, without measuring. */
+.dsh_atlas_roamBar {
+  box-sizing: border-box;
+  /* The outer spacer is the dock's own inset rule, verbatim from GoalBar.module.css
+     .dock: 2 x clearance + 4 x inset off the stack. It is deliberately NOT capped —
+     the cap lives on the inner surface, which is what lets the visible card be
+     narrower than the row without the row's centring moving. */
+  width: calc(
+    100% -
+    var(--dsh-composer-side-clearance) -
+    var(--dsh-composer-side-clearance) -
+    var(--dsh-composer-dock-inset) -
+    var(--dsh-composer-dock-inset) -
+    var(--dsh-composer-dock-inset) -
+    var(--dsh-composer-dock-inset)
+  );
+  margin: 0 auto;
+}
+/* The visible card. Every value here is the framework's own dock-card recipe
+   (GoalBar.module.css .bar), not an approximation of it, so the strip reads as a
+   sibling of the goal and todo cards rather than as a plugin-drawn lookalike:
+   same 0.5px l1 hairline, same 12px radius, same --dsw-specific-tip surface, same
+   36px height and 4px/12px padding. The earlier version invented its own
+   (999px pill, --dsw-alias-bg-elevated, a drop shadow, an em-based font size),
+   which is why it did not match — those tokens are a different rung of the same
+   palette. */
+.dsh_atlas_roamBarInner {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  max-width: calc(var(--dsh-composer-card-max-width) - 4 * var(--dsh-composer-dock-inset));
+  height: 36px;
+  margin: 0 auto;
+  padding: 4px 12px;
+  border: 0.5px solid var(--dsw-alias-border-l1);
+  border-radius: 12px;
+  background: var(--dsw-specific-tip);
+  /* Inherit the chat column's own type so the strip matches the conversation it
+     annotates; the fallback only applies in a shell that sets no font at all. */
+  font: inherit;
+  color: var(--dsw-alias-label-primary-dimmed);
+}
+/* The card's leading label, at the family's title metrics (13/24 medium) so the
+   three composer-stack cards share one typographic register. */
+.dsh_atlas_roamBarTag {
+  flex: none;
+  font-size: 13px;
+  line-height: 24px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+}
+.dsh_atlas_roamBarCount {
+  flex: none;
+  font-size: 13px;
+  line-height: 20px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--dsw-alias-label-primary-dimmed);
+}
+/* A-20: names the origin of a system-initiated turn. flex: none like the other
+   labels, so it never squeezes the message text out of the row. */
+.dsh_atlas_roamBarOrigin {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+  color: var(--dsw-alias-label-primary-dimmed);
+  background: var(--dsw-alias-bg-muted);
+}
+.dsh_atlas_roamBarText {
+  /* Takes the leftover room and gives it up first: the position and the label
+     are the parts that must stay readable. */
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-primary-dimmed);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A hairline between the position readout and the preview, drawn with the same
+   border token the card's own edge uses so it reads as part of the surface. */
+.dsh_atlas_roamBarSep {
+  flex: none;
+  width: 0.5px;
+  height: 16px;
+  background: var(--dsw-alias-border-l1);
+}
+/* A-05's edge notice: the walk stopped at the oldest LOADED frame. Muted, and it
+   never wraps the readout onto a second line — the card is a glanceable strip. */
+.dsh_atlas_roamBarEdge {
+  flex: none;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* F1 — the history palette. A centred dialog above the composer. */
+.dsh_atlas_paletteLayer {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 16px;
+}
+.dsh_atlas_paletteBackdrop {
+  position: absolute;
+  inset: 0;
+  background: rgb(0 0 0 / 32%);
+}
+.dsh_atlas_palette {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 42rem;
+  max-height: min(70vh, 32rem);
+  overflow: hidden;
+  border: 1px solid var(--dsw-alias-border-subtle, transparent);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-elevated, transparent);
+  box-shadow: 0 16px 48px rgb(0 0 0 / 32%);
+  color: var(--dsw-alias-label-primary, inherit);
+}
+.dsh_atlas_paletteHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 14px 6px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary, #9aa4b2);
+}
+.dsh_atlas_paletteTitle {
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary, inherit);
+}
+.dsh_atlas_paletteCount {
+  font-variant-numeric: tabular-nums;
+}
+.dsh_atlas_paletteFilter {
+  margin: 0 14px 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--dsw-alias-border-subtle, transparent);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-subtle, transparent);
+  color: inherit;
+  font: inherit;
+}
+.dsh_atlas_paletteList {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0 6px;
+  list-style: none;
+}
+.dsh_atlas_paletteRow {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.dsh_atlas_paletteRow[data-atlas-history-active] {
+  background: var(--dsw-alias-bg-subtle, rgb(127 127 127 / 14%));
+}
+.dsh_atlas_paletteRowText {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.dsh_atlas_paletteRowAnswer {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary, #9aa4b2);
+}
+.dsh_atlas_paletteTag {
+  flex: none;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--dsw-alias-bg-subtle, transparent);
+  color: var(--dsw-alias-label-tertiary, #9aa4b2);
+  font-size: 11px;
+}
+.dsh_atlas_paletteEmpty {
+  padding: 24px 14px;
+  text-align: center;
+  color: var(--dsw-alias-label-tertiary, #9aa4b2);
+}
+.dsh_atlas_paletteFoot {
+  padding: 8px 14px;
+  border-top: 1px solid var(--dsw-alias-border-subtle, transparent);
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary, #9aa4b2);
 }
 `
 

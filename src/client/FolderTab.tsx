@@ -18,7 +18,7 @@ import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-cli
 import type { SidebarRightTabDefinition } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { DirectoryListing } from '../contract.ts'
 import type { AtFileKey } from './locales.ts'
-import { folderPathOf } from './reference-links.ts'
+import { folderPathOf, selectionOf } from './reference-links.ts'
 import { childOf } from './model.ts'
 import { mentionIcon } from './icons.tsx'
 
@@ -51,8 +51,13 @@ export function folderTabDefinition(t: (key: AtFileKey, params?: Record<string, 
 
 /** What the session's shell shares with the folder tab. */
 export interface FolderTabInjected {
-  /** List one directory (one level); `''` means the session workspace root. */
-  readonly list: (path: string, signal: AbortSignal) => Promise<DirectoryListing>
+  /**
+   * List one directory (one level); `''` means the session workspace root.
+   * `include` names ONE child that must be present in the page: the entry cap is
+   * applied before the sort, so a huge folder can answer a page without the very
+   * row this tab has to select. `''` asks for no such guarantee.
+   */
+  readonly list: (path: string, signal: AbortSignal, include?: string) => Promise<DirectoryListing>
   /** Open a file the way every other reference does. */
   readonly openFile: (path: string) => void
   /** Hand a path to the OS file manager. */
@@ -72,7 +77,14 @@ export { childOf }
 export function FolderTab({ useTabInfo, list, openFile, openNative, t }: FolderTabProps): ReactNode {
   const { tab } = useTabInfo()
   const opened = useMemo(() => folderPathOf(tab.contentId) ?? folderPathOf(tab.navigation.address) ?? '', [tab.contentId, tab.navigation.address])
+  // The object whose SECOND click opened this folder (A.16). It arrives as tab
+  // navigation params, not as part of the address: the address is the tab's
+  // identity (re-opening the same folder must reveal this very tab rather than
+  // open a second one), so what is merely pointed AT cannot live in it.
+  const selected = useMemo(() => selectionOf(tab.navigation.params), [tab.navigation.params])
   const [current, setCurrent] = useState(opened)
+  /** The rows by entry name, so the selected one can be scrolled to without a DOM query. */
+  const rowRefs = useRef(new Map<string, HTMLLIElement>())
   const [listing, setListing] = useState<DirectoryListing | undefined>(undefined)
   const [failure, setFailure] = useState<string | undefined>(undefined)
   const [pending, setPending] = useState(true)
@@ -88,7 +100,7 @@ export function FolderTab({ useTabInfo, list, openFile, openNative, t }: FolderT
     const controller = new AbortController()
     setPending(true)
     setFailure(undefined)
-    void listRef.current(current, controller.signal).then(
+    void listRef.current(current, controller.signal, selected).then(
       (next) => {
         if (controller.signal.aborted) return
         setListing(next)
@@ -101,8 +113,29 @@ export function FolderTab({ useTabInfo, list, openFile, openNative, t }: FolderT
       },
     )
     return () => { controller.abort() }
-  }, [current])
+  }, [current, selected])
   const refusal = listing?.error === undefined ? undefined : t(`folder.error.${listing.error}`)
+  /**
+   * Bring the selected row into sight — and move nothing else.
+   *
+   * Deliberately NOT `scrollIntoView`: that scrolls EVERY scrollable ancestor, so
+   * it also moves the Sidebar's own viewport (or the chat behind it), which the
+   * user never asked for — the picker learned this the hard way in `3abd603`. Only
+   * the nearest scrollable ancestor of the row is touched, and only by the amount
+   * the row is out of sight.
+   */
+  useEffect(() => {
+    if (selected === undefined) return
+    const row = rowRefs.current.get(selected)
+    if (row === undefined) return
+    let box: HTMLElement | null = row.parentElement
+    while (box !== null && box.scrollHeight <= box.clientHeight) box = box.parentElement
+    if (box === null) return
+    const rowBox = row.getBoundingClientRect()
+    const boxBox = box.getBoundingClientRect()
+    if (rowBox.top < boxBox.top) box.scrollTop += rowBox.top - boxBox.top
+    else if (rowBox.bottom > boxBox.bottom) box.scrollTop += rowBox.bottom - boxBox.bottom
+  }, [selected, listing, tab.navigation])
   return (
     <section className="dsh_atlas_folder" data-atlas-folder>
       <header className="dsh_atlas_folderHead">
@@ -124,7 +157,11 @@ export function FolderTab({ useTabInfo, list, openFile, openNative, t }: FolderT
       {refusal !== undefined && <p className="dsh_atlas_folderNote" role="alert">{refusal}</p>}
       {failure !== undefined && <p className="dsh_atlas_folderNote" role="alert">{failure}</p>}
       {pending && listing === undefined && <p className="dsh_atlas_folderNote">{t('folder.loading')}</p>}
-      {listing?.drives !== undefined && (
+      {/* Only when there ARE siblings to offer. The Host answers a POSIX top level
+          with `drives: []`, and a `!== undefined` test rendered an empty "other
+          drives" section there — a heading with nothing under it, in the very menu
+          that was reported as showing no options. */}
+      {listing?.drives !== undefined && listing.drives.length > 0 && (
         <ul className="dsh_atlas_folderList" aria-label={t('folder.drives')}>
           {listing.drives.map(drive => (
             <li key={drive}>
@@ -140,11 +177,30 @@ export function FolderTab({ useTabInfo, list, openFile, openNative, t }: FolderT
         <ul className="dsh_atlas_folderList" aria-label={t('folder.aria')}>
           {listing.entries.map(entry => {
             const child = childOf(listing.path, entry.name)
+            const hit = entry.name === selected
             return (
-              <li key={entry.name}>
+              <li
+                key={entry.name}
+                ref={(node) => {
+                  if (node === null) rowRefs.current.delete(entry.name)
+                  else rowRefs.current.set(entry.name, node)
+                }}
+              >
                 <button
                   type="button"
-                  className="dsh_atlas_folderRow"
+                  className={hit ? 'dsh_atlas_folderRow dsh_atlas_folderRowSelected' : 'dsh_atlas_folderRow'}
+                  // The row the second click asked for, marked for both eyes and tests: a
+                  // data attribute so an end-to-end check can find it, and `aria-current`
+                  // so a screen reader says which row this folder was opened FOR.
+                  data-atlas-selected={hit ? '' : undefined}
+                  // The row the Host put back because the entry cap had cut it out of
+                  // the page (see `pinEntry`). It is FIRST rather than sorted into
+                  // place: the visible mark already says why it is here, and a row the
+                  // user must scroll to find is the bug this repairs. The attribute
+                  // lets an end-to-end check tell "pinned" from "happened to be in the
+                  // first 200".
+                  data-atlas-pinned={entry.pinned === true ? '' : undefined}
+                  aria-current={hit ? 'true' : undefined}
                   title={child}
                   onClick={() => { if (entry.kind === 'dir') setCurrent(child); else openFile(child) }}
                 >
@@ -156,7 +212,7 @@ export function FolderTab({ useTabInfo, list, openFile, openNative, t }: FolderT
           })}
         </ul>
       )}
-      {listing !== undefined && listing.error === undefined && listing.entries.length === 0 && listing.drives === undefined && (
+      {listing !== undefined && listing.error === undefined && listing.entries.length === 0 && (listing.drives?.length ?? 0) === 0 && (
         <p className="dsh_atlas_folderNote">{t('folder.empty')}</p>
       )}
       {listing?.truncated === true && <p className="dsh_atlas_folderNote">{t('folder.truncated')}</p>}

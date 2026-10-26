@@ -11,7 +11,7 @@ import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-cli
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { AtFileSettings, ReferenceInfo } from '../contract.ts'
 import { isProtectedMentionToken } from '../paste.ts'
-import { lineRangeLabel, splitLineRange } from '../tokens.ts'
+import { lineRangeLabel, MENTION_PATTERN, PLUGIN_MENTION_PATTERN, splitLineRange } from '../tokens.ts'
 import type { ReferenceLink } from './reference-links.ts'
 import type { MentionKind } from './source.ts'
 import { referenceKey } from './model.ts'
@@ -84,14 +84,8 @@ export interface DraftMention {
   readonly end: number
 }
 
-/** The same path token grammar the Host's reference marker scans. */
-const PATH_PATTERN = /@([^\s@]+)/g
-
 /** @skill:name tokens. */
 const SKILL_PATTERN = /@skill:([^\s@]+)/g
-
-/** @plugin:name tokens. */
-const PLUGIN_PATTERN = /@plugin:([^\s@]+)/g
 
 /** @atlas:provider/item tokens (the seam's provider mentions). */
 const PROVIDER_PATTERN = /@atlas:([a-z0-9-]+)\/([^\s@]+)/g
@@ -128,7 +122,7 @@ export function draftMentions(draft: string): readonly DraftMention[] {
     if (isProtectedMentionToken(name)) continue
     push({ kind: 'skill', key: match.index, label: name, start: match.index, end: match.index + match[0].length })
   }
-  for (const match of draft.matchAll(PLUGIN_PATTERN)) {
+  for (const match of draft.matchAll(PLUGIN_MENTION_PATTERN)) {
     const name = match[1] as string
     if (isProtectedMentionToken(name)) continue
     push({ kind: 'plugin', key: match.index, label: name, start: match.index, end: match.index + match[0].length })
@@ -147,7 +141,7 @@ export function draftMentions(draft: string): readonly DraftMention[] {
       end: match.index + match[0].length,
     })
   }
-  for (const match of draft.matchAll(PATH_PATTERN)) {
+  for (const match of draft.matchAll(MENTION_PATTERN)) {
     const raw = match[1] as string
     if (isProtectedMentionToken(raw) || isForeignPathToken(raw)) continue
     const target = splitLineRange(raw)

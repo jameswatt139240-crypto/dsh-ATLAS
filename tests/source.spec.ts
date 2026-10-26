@@ -240,6 +240,41 @@ describe('mixed candidates', () => {
     expect(row).toMatchObject({ name: 'view.ts', value: 'src/client/view.ts', atFileKind: 'file', description: '文件 · src/client' })
     expect(fileIconKind(FILES[3]!)).toBe('code')
   })
+
+  it('names the reason the workspace index failed instead of reporting no matches', async () => {
+    // The reported Linux symptom: after `@` nothing usable appeared, for a workspace
+    // whose files were plainly there. The index is the ONLY source of file rows, so
+    // swallowing its rejection renders "no files match" for a workspace that was
+    // never read — a lie, and the likely explanation for an otherwise empty menu.
+    // The notice states the reason and leads every other row.
+    const search = vi.fn(async (_id: SessionId): Promise<readonly FileEntry[]> => {
+      throw new Error("ENOENT: no such file or directory, scandir '/ws'")
+    })
+    const { source } = harness({ search })
+    const rows = await source.candidates(session('s1'), { query: 'view', position: 'inline', signal: new AbortController().signal })
+    expect(rows[0]).toMatchObject({
+      name: "⚠ ENOENT: no such file or directory, scandir '/ws'",
+      value: '',
+      mentionKind: 'browse-note',
+    })
+    // A failed index says nothing about the other categories, so they still answer
+    // and the notice is an addition rather than a replacement.
+    expect(rows.map(row => row.name)).toEqual(expect.arrayContaining(categoryRows().map(row => row.name)))
+  })
+
+  it('still rejects in the scoped file: view, which fails loud on purpose', async () => {
+    // The mixed query above REPORTS a failed index; the scoped `@file:` view is the
+    // one place that must not, because a category the user named explicitly answering
+    // with an unexplained empty list is worse than a visible error. This pins the
+    // boundary between the two, so a later "make it consistent" edit has to argue
+    // with a test rather than silently widening the swallowing.
+    const search = vi.fn(async (_id: SessionId): Promise<readonly FileEntry[]> => {
+      throw new Error('at-file is disabled in Settings')
+    })
+    const { source } = harness({ search })
+    await expect(source.candidates(session('s1'), { query: 'file:', position: 'leading', signal: new AbortController().signal }))
+      .rejects.toThrow(/at-file is disabled in Settings/)
+  })
 })
 
 describe('category modes', () => {
@@ -1064,6 +1099,9 @@ describe('@ caches and teardown', () => {
     expect(search).toHaveBeenCalledTimes(2)
   })
 
+  // The scoped view rejects on a failed index (see the `still rejects in the scoped
+  // file: view` case above), so the point of this one is the CACHE invariant behind
+  // that rejection: the failed fetch is dropped, so the next consumer retries.
   it('drops a failed fetch so the next consumer retries', async () => {
     const search = vi.fn(async () => {
       if (search.mock.calls.length === 1) throw new Error('down')

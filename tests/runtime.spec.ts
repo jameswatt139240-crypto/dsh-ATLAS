@@ -83,6 +83,14 @@ describe('dsh-atlas host composition', () => {
       usage: [],
       externalRefs: [],
       folderOpen: 'both',
+      historyJump: true,
+      // A-22: the ladder defaults to the page's own unit (one stop per turn).
+      historyJumpFrames: 'turn',
+      historyJumpReuseMode: 'replace',
+      // A-19 item 3. Present here proves the RESULT codec carries it: a field
+      // missing from this schema is dropped on the way back to the browser, so the
+      // settings row would silently snap back to its default after every save.
+      historyJumpSmartFollow: false,
     })
     expect(AtFileSettingsSchema({
       enabled: true,
@@ -107,6 +115,10 @@ describe('dsh-atlas host composition', () => {
       usage: [],
       externalRefs: [],
       folderOpen: 'both',
+      historyJump: true,
+      historyJumpFrames: 'turn',
+      historyJumpReuseMode: 'replace',
+      historyJumpSmartFollow: false,
     })
   })
 
@@ -144,6 +156,8 @@ describe('dsh-atlas host composition', () => {
       'inspect',
       'external',
       'list',
+      'browse',
+      'recentFolders',
     ])
     await fiber.dispose()
   })
@@ -208,18 +222,25 @@ describe('dsh-atlas host composition', () => {
       const signal = new AbortController().signal
       // `''` is the session workspace root, and a listing carries BOTH kinds,
       // directories first — the folder browser starts here.
-      const listing = await runtime.list(agent, '', signal)
+      const listing = await runtime.list(agent, '', '', signal)
       expect(listing.path).toBe(slashed(cwd))
       expect(listing.parent).toBe(slashed(root))
       expect(listing.entries).toEqual([{ name: 'src', kind: 'dir' }, { name: 'README.md', kind: 'file' }])
+      // The fourth argument names ONE child the page must contain even if the entry
+      // cap cut it away. A name the page already holds changes nothing and is never
+      // duplicated: the pin repays only what the cap actually took.
+      expect((await runtime.list(agent, '', 'README.md', signal)).entries).toEqual(listing.entries)
+      // It is a NAME, not a path: anything with a separator is not a child of this
+      // directory, so it pins nothing rather than reaching into a subdirectory.
+      expect((await runtime.list(agent, 'src', '../README.md', signal)).entries).toEqual([])
       // A workspace-relative path resolves against the session workspace.
-      expect((await runtime.list(agent, 'src', signal)).path).toBe(slashed(join(cwd, 'src')))
+      expect((await runtime.list(agent, 'src', '', signal)).path).toBe(slashed(join(cwd, 'src')))
       // A file is not a folder, and a name that is gone is gone — each says which.
-      expect((await runtime.list(agent, 'README.md', signal)).error).toBe('notDirectory')
-      expect((await runtime.list(agent, 'nope', signal)).error).toBe('missing')
+      expect((await runtime.list(agent, 'README.md', '', signal)).error).toBe('notDirectory')
+      expect((await runtime.list(agent, 'nope', '', signal)).error).toBe('missing')
       // Outside the workspace without the access: refused as a REASON (the browser
       // says it in its own words) rather than an exception.
-      const denied = await runtime.list(agent, slashed(outside), signal)
+      const denied = await runtime.list(agent, slashed(outside), '', signal)
       expect(denied.error).toBe('outside')
       expect(denied.entries).toEqual([])
       await fiber.dispose()
@@ -228,7 +249,7 @@ describe('dsh-atlas host composition', () => {
       fullCtx.provide('sandboxPolicy', { resolve: () => ({ mode: 'danger-full-access' }) })
       const fullFiber = await mount(fullCtx)
       const full = fullCtx.get('atFile') as AtFileRuntime
-      const allowed = await full.list(agent, slashed(outside), signal)
+      const allowed = await full.list(agent, slashed(outside), '', signal)
       expect(allowed.error).toBeUndefined()
       expect(allowed.path).toBe(slashed(outside))
       await fullFiber.dispose()
@@ -246,7 +267,7 @@ describe('dsh-atlas host composition', () => {
     const fiber = await mount(ctx)
     try {
       const runtime = ctx.get('atFile') as AtFileRuntime
-      const listing = await runtime.list(agentWith(process.cwd()), 'C:/', new AbortController().signal)
+      const listing = await runtime.list(agentWith(process.cwd()), 'C:/', '', new AbortController().signal)
       expect(listing.parent).toBeUndefined()
       expect(listing.drives).toContain('C:/')
     } finally {

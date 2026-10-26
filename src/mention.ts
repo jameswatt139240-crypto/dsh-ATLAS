@@ -13,8 +13,8 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { PreStepDecision } from '@deepseek-ai/dsh-agent'
 import { isProtectedMentionToken, PASTED_MENTION_MARKER, stripPastedMentionMarkers } from './paste.ts'
 import { cleanChatMentions } from './references.ts'
-import { lineRangeLabel, splitLineRange, type LineRange } from './tokens.ts'
-import { allowsExternal, externalPath, type ExternalAccess } from './external.ts'
+import { lineRangeLabel, MENTION_PATTERN, splitLineRange, type LineRange } from './tokens.ts'
+import { allowsExternal, externalPath, isUnder, type ExternalAccess } from './external.ts'
 import { isCancellation } from './abort.ts'
 
 /**
@@ -51,9 +51,6 @@ declare module '@deepseek-ai/dsh-llm' {
 /** The user-message source kind this boundary scans (external text cannot forge it). */
 const USER_SOURCE_KIND = 'user'
 
-/** The literal mention token: `@` then a path with no whitespace or `@`. */
-const MENTION_PATTERN = /@([^\s@]+)/g
-
 /**
  * Scan one text block for `@path` tokens, deduplicated in first-seen order.
  * A trailing slash (the directory chip form) is stripped from the path.
@@ -81,9 +78,11 @@ export function scanMentions(text: string, ignorePastedMentions = true): readonl
  * Workspace-relative tokens stay confined to the cwd. An ABSOLUTE token is a
  * deliberate out-of-workspace reference and is accepted only when the session's
  * access allows it (`src/external.ts`): under 完全权限 anything that exists, under
- * a narrower mode only what the ledger already knows. A line range is only
- * meaningful on a file, so a range on a directory (or on a path that does not
- * exist) is refused.
+ * a narrower mode only what the ledger already knows — EXCEPT an absolute token
+ * that lands inside the workspace, which is a workspace reference however it is
+ * spelled (`/mnt/share/proj` under a cwd of `/mnt/share` is `proj`). A line range
+ * is only meaningful on a file, so a range on a directory (or on a path that does
+ * not exist) is refused.
  * @param token - workspace-relative token, or an absolute external path, optionally `path:start-end`.
  * @param cwd - the session's workspace directory.
  * @param signal - caller lifetime.
@@ -98,10 +97,14 @@ async function resolveMention(
 ): Promise<Mention | undefined> {
   const target = splitLineRange(token)
   const external = isAbsolute(target.path)
-  if (external) {
+  const absolute = external ? target.path : resolve(cwd, target.path)
+  // Inside the workspace an absolute spelling is just another way to write a
+  // workspace path, so the external gate must not apply — `isUnder` is the same
+  // bypass `src/runtime.ts` and `src/reference.ts` use.
+  const inside = external && isUnder(cwd, absolute)
+  if (external && !inside) {
     if (access === undefined || !allowsExternal(access, target.path)) return undefined
   }
-  const absolute = external ? target.path : resolve(cwd, target.path)
   const confined = pathRelative(cwd, absolute)
   if (!external && (confined === '..' || confined.startsWith(`..${sep}`) || isAbsolute(confined))) {
     return undefined
@@ -112,8 +115,12 @@ async function resolveMention(
   if (info === undefined) return undefined
   const kind = info.isDirectory() ? 'dir' : 'file'
   if (target.lines !== undefined && kind === 'dir') return undefined
-  const relative = external ? externalPath(absolute) : (confined.split(sep).join('/') || '.')
-  return { relative, kind, ...(external ? { outside: true as const } : {}), ...(target.lines === undefined ? {} : { lines: target.lines }) }
+  // An in-workspace absolute token converges on its relative spelling, so one
+  // folder named two ways yields ONE reference and never lands in the external
+  // ledger (whose roots become the folder chooser's presets).
+  const outside = external && !inside
+  const relative = outside ? externalPath(absolute) : (confined.split(sep).join('/') || '.')
+  return { relative, kind, ...(outside ? { outside: true as const } : {}), ...(target.lines === undefined ? {} : { lines: target.lines }) }
 }
 
 /** Escape one XML-like attribute without modifying the referenced path. */

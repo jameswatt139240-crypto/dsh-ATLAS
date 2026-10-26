@@ -6,7 +6,6 @@
  */
 import type { Context } from '@deepseek-ai/cordis';
 import z from '@deepseek-ai/schemastery';
-import type { SettingsScope } from '@deepseek-ai/dsh-settings';
 import type { AtFileSettings } from './contract.ts';
 /** The branded namespace name (the Web allowlist must list the same string). */
 export declare const AT_FILE_NAMESPACE = "at-file";
@@ -18,8 +17,26 @@ export declare const AT_FILE_NAMESPACE = "at-file";
  */
 export declare const AtFileSettingsSchema: z<AtFileSettings>;
 /**
+ * The settings surface this plugin consumes: the `at-file` namespace's live
+ * value and a writer for it.
+ *
+ * Stated here rather than imported because the published settings service types
+ * a composition EDITOR (`describe`/`update`/`mutate` over the profile's own
+ * entries), while this plugin owns a namespace of its own. The namespace API the
+ * runtime still answers — `register(namespace, schema, { applies: 'live' })` —
+ * is what this shape names, and {@link registerAtFileSettings} probes for it
+ * instead of assuming it, so a profile without it degrades to defaults instead
+ * of failing the whole plugin at load.
+ */
+export interface AtFileSettingsScope {
+    /** The namespace's current value, defaults applied. */
+    get(): AtFileSettings;
+    /** Merge one patch into the namespace and persist it. */
+    update(patch: Partial<AtFileSettings>): Promise<void>;
+}
+/**
  * Register the namespace with the settings provider and return its owner scope.
  * @param ctx - the plugin context carrying the settings provider.
  * @returns the owner scope backing the runtime's live enable check.
  */
-export declare function registerAtFileSettings(ctx: Context): SettingsScope<AtFileSettings>;
+export declare function registerAtFileSettings(ctx: Context): AtFileSettingsScope;

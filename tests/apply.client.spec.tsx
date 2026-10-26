@@ -14,13 +14,19 @@ import { NS, en, zh } from '../src/client/locales.ts'
 import { SOURCE_NAME } from '../src/client/source.ts'
 import { STYLE_ID } from '../src/client/styles.ts'
 import { DEFAULT_IGNORE_FILES } from '../src/defaults.ts'
-import type { AtFileSettings, AtFileSettingsUpdate, ReferenceInfo, WorkspaceIgnoreFiles } from '../src/contract.ts'
+import type { AtFileSettings, AtFileSettingsUpdate, DirectoryListing, ReferenceInfo, WorkspaceIgnoreFiles } from '../src/contract.ts'
 
 type RemoteResult<T> = { ok: true; value: T } | { ok: false; error: { code: string; message: string; details: object } }
 
 interface BootOptions {
   atFileSearch?: (sessionId: SessionId, signal: AbortSignal) => Promise<RemoteResult<readonly { path: string; relative: string; kind: 'file' | 'dir' }[]>>
   atFileInspect?: (sessionId: SessionId, targets: readonly string[]) => Promise<RemoteResult<readonly ReferenceInfo[]>>
+  /**
+   * The Host's one-level listing, which is how a folder's SECOND click learns the
+   * absolute spelling of the folder (m02155). Absent by default, like a Host built
+   * before the folder browser: the click then falls back to the Session summary.
+   */
+  atFileList?: (sessionId: SessionId, path: string, include: string, signal: AbortSignal) => Promise<RemoteResult<DirectoryListing>>
   atFileGetSettings?: () => Promise<RemoteResult<AtFileSettings>>
   atFileUpdateSettings?: (update: AtFileSettingsUpdate) => Promise<RemoteResult<AtFileSettings>>
   openPath?: () => Promise<{ ok: true } | { ok: false; error: { message: string } }>
@@ -31,8 +37,12 @@ interface BootOptions {
   withoutNamespace?: boolean
   withoutSessionRemote?: boolean
   remoteMount?: () => Promise<() => void>
-  /** The session list the draft's bare-label resolver reads (ids + display titles). */
-  sessionList?: { ids: readonly string[]; byId: Record<string, { displayTitle: string }> }
+  /**
+   * The session list the draft's bare-label resolver reads (ids + display titles),
+   * plus the `cwd` the desktop opener needs: a folder's SECOND click must hand the
+   * Host an absolute path, and the Host resolves nothing (it only opens).
+   */
+  sessionList?: { ids: readonly string[]; byId: Record<string, { displayTitle: string; cwd?: string }> }
   /** How `ctx.sessions.open` answers; the default records the call. */
   openSession?: (sessionId: string) => void
   /**
@@ -88,6 +98,7 @@ async function boot(options: BootOptions = {}) {
       // The open action confirms a target exists before handing it to a viewer;
       // without a stub the plugin treats the target as unverified and opens.
       ...(options.atFileInspect === undefined ? {} : { inspect: options.atFileInspect }),
+      ...(options.atFileList === undefined ? {} : { list: options.atFileList }),
       getSettings,
       updateSettings,
     })
@@ -824,7 +835,7 @@ describe('dsh-atlas client apply', () => {
       .resolves.toBe('opened')
   })
 
-  it('opens a directory row in the sidebar AND locally by default', async () => {
+  it('opens a directory row in the sidebar, selected, and NOT locally (A-16.7 + m05904)', async () => {
     const booted = await boot({
       atFileSearch: async () => ({ ok: true as const, value: [{ path: '/ws/src', relative: 'src', kind: 'dir' }] }),
     })
@@ -835,28 +846,156 @@ describe('dsh-atlas client apply', () => {
     booted.ctx.provide('sidebarRight', { openResource, openTab })
     dockOf(booted).inject('s1').onOpen({ kind: 'folder', path: 'src' })
     await settle()
-    // The default is BOTH: the sidebar is where a folder is useful, and the local
-    // open that came first still runs alongside it. A WORKSPACE folder opens the
-    // product's own files tab — the tree the user already reads folders in. That tab
-    // is a PAGE (it claims no address), so it is opened by kind and starts at the
-    // workspace root: no params and no reveal API exist to select a folder in it.
-    expect(openTab).toHaveBeenCalledWith('files')
-    expect(openResource).not.toHaveBeenCalled()
-    expect(booted.openPath).toHaveBeenCalledWith({ path: '/ws/src' })
+    // The sidebar is where a folder is useful, and it is now the only surface the
+    // FIRST click reaches: the local (OS) open that used to ride along by default is
+    // off for good (A.16.7), so nothing may ask the Host to open a path here. The
+    // product's own files PAGE is not used either (m05904): it claims no address at
+    // all, so it cannot be told WHICH folder to reveal, let alone which row to select.
+    // This plugin's folder tab takes an address plus a `select`, so the first click
+    // lands the user INSIDE the clicked folder instead of at the workspace root.
+    expect(openResource).toHaveBeenCalledWith('dsh-resource://folder//ws', { params: { select: 'src' } })
+    expect(openTab).not.toHaveBeenCalled()
+    expect(booted.openPath).not.toHaveBeenCalled()
   })
 
-  it('falls back to this plugin folder tab when the build has no files tab', async () => {
+  it('opens a directory row in this plugin folder tab even with no files tab', async () => {
     const booted = await boot({
       atFileSearch: async () => ({ ok: true as const, value: [{ path: '/ws/src', relative: 'src', kind: 'dir' }] }),
     })
     await registered(booted).candidates(s1, { query: '', position: 'leading', signal: signal() })
     await settle()
     const openResource = vi.fn()
-    // A sidebar face without `openTab`: this plugin's own folder tab is the fallback.
+    // A sidebar face without `openTab`: nothing is lost, because the folder tab this
+    // plugin registers is the surface a folder click wants in every build.
     booted.ctx.provide('sidebarRight', { openResource })
     dockOf(booted).inject('s1').onOpen({ kind: 'folder', path: 'src' })
     await settle()
-    expect(openResource).toHaveBeenCalledWith('dsh-resource://folder/src')
+    expect(openResource).toHaveBeenCalledWith('dsh-resource://folder//ws', { params: { select: 'src' } })
+  })
+
+  it('opens the owning folder with the object selected on the SECOND click of a file', async () => {
+    const booted = await boot({
+      atFileSearch: async () => ({ ok: true as const, value: [{ path: '/ws/src/a.ts', relative: 'src/a.ts', kind: 'file' }] }),
+    })
+    // The picker search is what warms the workspace index the second click reads
+    // its owning folder from, and it is also what the user typed the mention with.
+    await registered(booted).candidates(s1, { query: '', position: 'leading', signal: signal() })
+    await settle()
+    const openResource = vi.fn()
+    booted.ctx.provide('sidebarRight', { openResource, openTab: vi.fn() })
+    const dock = dockOf(booted).inject('s1')
+    dock.onOpen({ kind: 'file', path: 'src/a.ts' })
+    await settle()
+    expect(openResource).toHaveBeenCalledWith('dsh-resource://file/session/s1/src/a.ts')
+    openResource.mockClear()
+    // The same object again — no timing involved, so a slow second click behaves
+    // exactly like a fast one. `src` is a directory the file-only index does not
+    // hold, so it stays relative and the Host resolves it against the session's
+    // working directory; the object cannot ride the address, which is the tab's
+    // identity, so it rides `params.select`.
+    dock.onOpen({ kind: 'file', path: 'src/a.ts' })
+    await settle()
+    expect(openResource).toHaveBeenCalledWith('dsh-resource://folder/src', { params: { select: 'a.ts' } })
+    // The click after a completed pair starts over, so the FIRST behaviour stays
+    // reachable instead of the user being trapped in the second one.
+    openResource.mockClear()
+    dock.onOpen({ kind: 'file', path: 'src/a.ts' })
+    await settle()
+    expect(openResource).toHaveBeenCalledWith('dsh-resource://file/session/s1/src/a.ts')
+  })
+
+  it('hands a FOLDER to the desktop file manager on the second click (m05904)', async () => {
+    const booted = await boot({
+      atFileSearch: async () => ({ ok: true as const, value: [{ path: '/ws/src/a.ts', relative: 'src/a.ts', kind: 'file' }] }),
+      sessionList: { ids: ['s1'], byId: { s1: { displayTitle: 'Work', cwd: '/ws' } } },
+    })
+    await registered(booted).candidates(s1, { query: '', position: 'leading', signal: signal() })
+    await settle()
+    const openResource = vi.fn()
+    const openTab = vi.fn()
+    booted.ctx.provide('sidebarRight', { openResource, openTab })
+    const dock = dockOf(booted).inject('s1')
+    // First click: this plugin's folder tab, at the folder's PARENT, with the folder
+    // itself selected — so the user starts inside it, not at the workspace root.
+    dock.onOpen({ kind: 'folder', path: 'src' })
+    await settle()
+    expect(openResource).toHaveBeenCalledWith('dsh-resource://folder//ws', { params: { select: 'src' } })
+    booted.openPath.mockClear()
+    openResource.mockClear()
+    // Second click: the folder itself, in the DESKTOP's own file manager — the
+    // gesture the plugin cannot answer itself (m05904). No timing is involved, so a
+    // slow second click behaves exactly like a fast one. `src` is a directory the
+    // file-only index does not hold, and the Host opener resolves NOTHING. This boot
+    // mounts no `atFile.list`, so what answers here is the FALLBACK: the relative
+    // path joined onto the session's workspace root. A Host that DOES list answers
+    // with its own canonical path — that is the next test (m02155).
+    dock.onOpen({ kind: 'folder', path: 'src' })
+    await settle()
+    expect(booted.openPath).toHaveBeenCalledWith({ path: '/ws/src' })
+    expect(openResource).not.toHaveBeenCalled()
+    // The click after a completed pair starts over, so the FIRST behaviour stays
+    // reachable instead of the user being trapped in the second one.
+    booted.openPath.mockClear()
+    dock.onOpen({ kind: 'folder', path: 'src' })
+    await settle()
+    expect(booted.openPath).not.toHaveBeenCalled()
+    expect(openResource).toHaveBeenCalledWith('dsh-resource://folder//ws', { params: { select: 'src' } })
+  })
+
+  it('resolves a folder through the Host listing, so a summary with no cwd cannot kill the second click (m02155)', async () => {
+    // The reported defect: a relative multi-segment folder (`lib/types/client`) was
+    // not handed to the file manager on either host, while the tab's own open-in-
+    // system button kept working. Both gestures reach the SAME opener, so the
+    // difference was where the absolute path came from: this side joined it onto the
+    // Session summary's `cwd`, a summary may carry no directory at all, and that
+    // failure was only ever a line in the browser console. The Host is the authority:
+    // `atFile/list` resolves the reference against the session header's directory and
+    // answers the canonical spelling of the folder it was asked about, which is what
+    // the tab's button opens.
+    const list = vi.fn(async () => ({
+      ok: true as const,
+      value: { path: '/ws/lib/types/client', parent: '/ws/lib/types', entries: [] },
+    }))
+    // No `sessionList` at all: the fallback join has nothing to work with here, so
+    // only the Host's own answer can put an absolute path in front of the opener.
+    const booted = await boot({ atFileList: list })
+    const openResource = vi.fn()
+    booted.ctx.provide('sidebarRight', { openResource, openTab: vi.fn() })
+    const dock = dockOf(booted).inject('s1')
+    // The FIRST click is unchanged: the owning folder, worked out on this side, with
+    // the object selected there — and it lists nothing.
+    dock.onOpen({ kind: 'folder', path: 'lib/types/client' })
+    await settle()
+    expect(openResource).toHaveBeenCalledWith('dsh-resource://folder/lib/types', { params: { select: 'client' } })
+    expect(list).not.toHaveBeenCalled()
+    booted.openPath.mockClear()
+    openResource.mockClear()
+    dock.onOpen({ kind: 'folder', path: 'lib/types/client' })
+    await settle()
+    expect(list).toHaveBeenCalledWith('s1', 'lib/types/client', '', expect.anything())
+    expect(booted.openPath).toHaveBeenCalledWith({ path: '/ws/lib/types/client' })
+    expect(openResource).not.toHaveBeenCalled()
+  })
+
+  it('opens the owning folder even when the reference itself is gone', async () => {
+    const booted = await boot({
+      atFileInspect: async (_id, targets) => ({
+        ok: true as const,
+        value: targets.map(relative => ({ relative, exists: false, kind: 'file' as const, size: 10 })),
+      }),
+    })
+    const openResource = vi.fn()
+    booted.ctx.provide('sidebarRight', { openResource, openTab: vi.fn() })
+    const dock = dockOf(booted).inject('s1')
+    // The first click is refused (a vanished target is not handed to a viewer) but
+    // still counts as the object's click, and a folder outlives its file: the user
+    // goes looking for a deleted reference in the place it used to be.
+    dock.onOpen({ kind: 'file', path: 'E:/Eason/gone/a.ts' })
+    await settle()
+    expect(openResource).not.toHaveBeenCalled()
+    dock.onOpen({ kind: 'file', path: 'E:/Eason/gone/a.ts' })
+    await settle()
+    expect(openResource).toHaveBeenCalledWith('dsh-resource://folder/E:/Eason/gone', { params: { select: 'a.ts' } })
   })
 
   it('still opens a folder in a profile that mounts NO Sidebar at all', async () => {
@@ -865,15 +1004,34 @@ describe('dsh-atlas client apply', () => {
     // helper this click would throw instead of falling back to the OS opener.
     const booted = await boot({
       atFileSearch: async () => ({ ok: true as const, value: [{ path: '/ws/src', relative: 'src', kind: 'dir' }] }),
+      sessionList: { ids: ['s1'], byId: { s1: { displayTitle: 'Work', cwd: '/ws' } } },
       mountThrowingService: 'sidebarRight',
     })
     await registered(booted).candidates(s1, { query: '', position: 'leading', signal: signal() })
     await settle()
     // No `sidebarRight` is provided anywhere: the read must degrade, not throw, and
-    // the local opener that ran first stays the effective action.
+    // the desktop file manager is then the only surface a folder has. The Host opener
+    // resolves nothing, so the workspace-relative path is made absolute here first.
     expect(() => dockOf(booted).inject('s1').onOpen({ kind: 'folder', path: 'src' })).not.toThrow()
     await settle()
     expect(booted.openPath).toHaveBeenCalledWith({ path: '/ws/src' })
+  })
+
+  it('refuses to invent an absolute path for a folder it cannot resolve', async () => {
+    // The one way to have no absolute path: no Sidebar AND no session workspace
+    // (`cwd` is what the session list carries, and a session with no workspace has
+    // none). Handing the Host a bare relative path would open the Host's own browse
+    // root — anywhere on the machine — so the click is refused and said so aloud.
+    const booted = await boot({ mountThrowingService: 'sidebarRight' })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      dockOf(booted).inject('s1').onOpen({ kind: 'folder', path: 'src' })
+      await settle()
+      expect(booted.openPath).not.toHaveBeenCalled()
+      expect(warn).toHaveBeenCalledWith('[dsh-atlas] this folder has no absolute path to open: src')
+    } finally {
+      warn.mockRestore()
+    }
   })
 
   it('opens a folder with the local opener when only the TAB registry is missing', async () => {
@@ -884,7 +1042,11 @@ describe('dsh-atlas client apply', () => {
     expect(booted.ctx.get('sidebarRightTabs')).toBeUndefined()
   })
 
-  it('honours the folder-open setting: sidebar only, or local only', async () => {
+  it('opens a folder in the sidebar alone, whatever the stored setting says', async () => {
+    // A-16.7: the folder-open choice is gone from the UI and no longer decides
+    // anything, so a `native` left behind by an older install must NOT resurrect the
+    // local opener. Writing that stale value through the verb that still exists for
+    // the persisted field is the only way to prove the value stopped mattering.
     const booted = await boot({
       atFileSearch: async () => ({ ok: true as const, value: [{ path: '/ws/src', relative: 'src', kind: 'dir' }] }),
     })
@@ -893,26 +1055,17 @@ describe('dsh-atlas client apply', () => {
     const openResource = vi.fn()
     const openTab = vi.fn()
     booted.ctx.provide('sidebarRight', { openResource, openTab })
-
-    await settingsSection(booted).inject().setFolderOpen('sidebar')
-    await settle()
-    booted.openPath.mockClear()
-    dockOf(booted).inject('s1').onOpen({ kind: 'folder', path: 'src' })
-    await settle()
-    expect(openTab).toHaveBeenCalledTimes(1)
-    expect(booted.openPath).not.toHaveBeenCalled()
-
     await settingsSection(booted).inject().setFolderOpen('native')
     await settle()
-    openResource.mockClear()
-    openTab.mockClear()
     booted.openPath.mockClear()
     dockOf(booted).inject('s1').onOpen({ kind: 'folder', path: 'src' })
     await settle()
-    // Local only: the sidebar is not even asked, and the Host opener gets the
-    // absolute path the index knows for this relative row.
-    expect(openResource).not.toHaveBeenCalled()
-    expect(booted.openPath).toHaveBeenCalledWith({ path: '/ws/src' })
+    // The sidebar took it; the OS opener was never asked. WHICH sidebar surface is
+    // not a question either: a folder always lands in this plugin's own folder tab,
+    // selected, so the stale value decides nothing at all (A.16.7 + m05904).
+    expect(openResource).toHaveBeenCalledWith('dsh-resource://folder//ws', { params: { select: 'src' } })
+    expect(openTab).not.toHaveBeenCalled()
+    expect(booted.openPath).not.toHaveBeenCalled()
   })
 
   it('asks the sidebar for an out-of-workspace folder by absolute address', async () => {
@@ -923,11 +1076,14 @@ describe('dsh-atlas client apply', () => {
     booted.ctx.provide('sidebarRight', { openResource })
     dockOf(booted).inject('s1').onOpen({ kind: 'folder', path: 'E:/outside/deepseek-harness' })
     await settle()
-    // A folder rides the plugin's own `folder` type for both scopes: the Host
-    // resolves a workspace-relative path against the session workspace, and an
-    // out-of-workspace one is already absolute. The OS opener gets the path itself.
-    expect(openResource).toHaveBeenCalledWith('dsh-resource://folder/E:/outside/deepseek-harness')
-    expect(booted.openPath).toHaveBeenCalledWith({ path: 'E:/outside/deepseek-harness' })
+    // A folder rides the plugin's own `folder` type for both scopes: an absolute
+    // path is passed on as-is (the Host resolves nothing), and the click lands on the
+    // folder's PARENT with the folder itself selected, so `deepseek-harness` is the
+    // row the user is put on rather than the top of `E:/outside` (m05904). The
+    // sidebar is the only surface the FIRST click reaches — the OS opener is not
+    // asked (A.16.7).
+    expect(openResource).toHaveBeenCalledWith('dsh-resource://folder/E:/outside', { params: { select: 'deepseek-harness' } })
+    expect(booted.openPath).not.toHaveBeenCalled()
   })
 
   it('clears the index on connection reset', async () => {

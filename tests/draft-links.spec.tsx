@@ -167,6 +167,8 @@ function mountBridge(infos: readonly unknown[] = [], behaviour: 'open' | 'none' 
   host: HTMLElement
   opened: ReturnType<typeof vi.fn>
   actionFor: ReturnType<typeof vi.fn>
+  repeatClick: ReturnType<typeof vi.fn>
+  noteClick: ReturnType<typeof vi.fn>
 } {
   const host = mountComposer()
   const container = document.createElement('div')
@@ -179,13 +181,17 @@ function mountBridge(infos: readonly unknown[] = [], behaviour: 'open' | 'none' 
     if (behaviour === 'reject') return () => Promise.reject(new Error('provider refused'))
     return () => { opened(_link) }
   })
+  // The plugin's click ledger, stubbed: a test decides what "this was already
+  // opened once" means for its own click rather than replaying two clicks.
+  const repeatClick = vi.fn(() => false)
+  const noteClick = vi.fn()
   const useReferenceInfo = (select: (snapshot: ReferenceInfoSnapshot) => unknown): unknown =>
     select({ value: infos as ReferenceInfoSnapshot['value'] })
   flushSync(() => {
-    root.render(<DraftLinks {...({ actionFor, useReferenceInfo } as unknown as DraftLinksProps)} />)
+    root.render(<DraftLinks {...({ actionFor, repeatClick, noteClick, useReferenceInfo } as unknown as DraftLinksProps)} />)
   })
   flushSync(() => {})
-  return { root, host, opened, actionFor }
+  return { root, host, opened, actionFor, repeatClick, noteClick }
 }
 
 describe('tokenRunAt', () => {
@@ -534,6 +540,29 @@ describe('the draft bridge', () => {
     stubCaret(textOf(head), 3)
     expect(click(head, 2).defaultPrevented).toBe(false)
     expect(opened).not.toHaveBeenCalled()
+  })
+
+  it('answers the second click on the same token the way the dock row does', async () => {
+    stubHighlight()
+    // m05904/A-27: the surfaces differ, the object does not. The composer token
+    // asks through the same ledger, so the click that follows one recorded click
+    // is the SECOND click — the folder the file lives in, not the file again.
+    const { host, opened, actionFor, repeatClick, noteClick } = mountBridge([EXISTS('README.md')])
+    const line = lineText(host, 1)
+    stubCaret(line, 5)
+    expect(click(line.parentElement as HTMLElement).defaultPrevented).toBe(true)
+    await settle()
+    expect(actionFor.mock.calls).toContainEqual([{ kind: 'file', path: 'README.md' }, false])
+    expect(noteClick).toHaveBeenCalledWith({ kind: 'file', path: 'README.md' })
+    // One recorded click later the same token is the repeat, and the click is
+    // still a link: the ledger changes WHICH action runs, never whether one does.
+    repeatClick.mockReturnValue(true)
+    stubCaret(line, 5)
+    expect(click(line.parentElement as HTMLElement).defaultPrevented).toBe(true)
+    await settle()
+    expect(repeatClick).toHaveBeenCalledWith({ kind: 'file', path: 'README.md' })
+    expect(actionFor.mock.calls).toContainEqual([{ kind: 'file', path: 'README.md' }, true])
+    expect(opened).toHaveBeenCalledTimes(2)
   })
 
   it('offers nothing for a hand-typed token the Host has not confirmed', async () => {

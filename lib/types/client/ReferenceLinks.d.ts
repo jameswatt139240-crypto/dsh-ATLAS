@@ -19,7 +19,27 @@ export interface ReferenceLinksInjected {
      * the mention was sent — so the bridge marks that chip stale instead of
      * pretending the click opened something.
      */
-    readonly actionFor: (link: ReferenceLink) => (() => ReferenceOutcome | Promise<ReferenceOutcome>) | undefined;
+    readonly actionFor: (link: ReferenceLink, again?: boolean) => (() => ReferenceOutcome | Promise<ReferenceOutcome>) | undefined;
+    /**
+     * Whether this click is the SECOND one on the same reference (A.16).
+     *
+     * The plugin answers this from its own ledger rather than from the event's
+     * `detail`, because `detail` is synthesized by the operating system's
+     * double-click interval: the user's ruling (`m02489`) is that the second
+     * meaning must not depend on clicking quickly, and a ledger is the only thing
+     * that can tell "the same object again" from "another click nearby" at any
+     * speed. See {@link noteClick} for when the ledger moves on.
+     */
+    readonly repeatClick: (link: ReferenceLink) => boolean;
+    /**
+     * Record that this reference has been clicked, and only after the action was
+     * actually resolved — an inert reference must not consume the sequence.
+     *
+     * Writing FLIPS the ledger rather than appending: a third click therefore means
+     * "open it" again, exactly like the first. Otherwise a user who clicked twice
+     * would be stuck in the second meaning with no way back to the first.
+     */
+    readonly noteClick: (link: ReferenceLink) => void;
     /**
      * Map one composer chip's label to a workspace-relative path.
      *
@@ -87,4 +107,4 @@ export declare function composerChipLink(host: Element, resolve?: (label: string
  */
 export declare function draftPathForLabel(draft: string, label: string): string | undefined;
 /** Invisible bridge: opens the reference chips the product renders on click. */
-export declare function ReferenceLinks({ actionFor, resolveLabel, useInput }: ReferenceLinksProps): null;
+export declare function ReferenceLinks({ actionFor, resolveLabel, repeatClick, noteClick, useInput }: ReferenceLinksProps): null;

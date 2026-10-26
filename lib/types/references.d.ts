@@ -12,11 +12,16 @@
 import type { Agent } from '@deepseek-ai/dsh-agent';
 import type { ContentBlock, UserMessage } from '@deepseek-ai/dsh-llm';
 import type { AtlasCallContext, AtlasRegistration } from './atlas.ts';
+import { PLUGIN_MENTION_PATTERN } from './tokens.ts';
 import { type SessionReferenceInput } from '@deepseek-ai/dsh-session-reference';
 /** The `@skill:name` mention token: `@skill:` then a whitespace/@-free name. */
 export declare const SKILL_MENTION_PATTERN: RegExp;
-/** The `@plugin:name` mention token: `@plugin:` then a whitespace/@-free module name. */
-export declare const PLUGIN_MENTION_PATTERN: RegExp;
+/**
+ * The `@plugin:<module>` mention token. A plugin is named by its npm MODULE
+ * name, which may be scoped (`@plugin:@sidequest-007/dsh-atlas`); the grammar
+ * lives in `./tokens.ts` so the Host and the client agree on it (m05904).
+ */
+export { PLUGIN_MENTION_PATTERN };
 /** The source tag skill reference messages carry (transcript consumers use it). */
 declare module '@deepseek-ai/dsh-llm' {
     interface MessageSourceMap {

@@ -256,6 +256,14 @@ export function apply(ctx: Context, config?: Config): void {
       await settings.update({ externalRefs: normalizeExternalRefs(update.value) })
     } else if (update.field === 'folderOpen') {
       await settings.update({ folderOpen: update.value })
+    } else if (update.field === 'historyJump') {
+      await settings.update({ historyJump: update.value })
+    } else if (update.field === 'historyJumpFrames') {
+      await settings.update({ historyJumpFrames: update.value })
+    } else if (update.field === 'historyJumpReuseMode') {
+      await settings.update({ historyJumpReuseMode: update.value })
+    } else if (update.field === 'historyJumpSmartFollow') {
+      await settings.update({ historyJumpSmartFollow: update.value })
     } else {
       await settings.update({ ignorePastedMentions: update.value })
     }

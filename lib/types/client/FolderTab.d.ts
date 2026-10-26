@@ -32,8 +32,13 @@ export declare const FOLDER_TAB_KIND = "atlas-folder";
 export declare function folderTabDefinition(t: (key: AtFileKey, params?: Record<string, string>) => string): SidebarRightTabDefinition;
 /** What the session's shell shares with the folder tab. */
 export interface FolderTabInjected {
-    /** List one directory (one level); `''` means the session workspace root. */
-    readonly list: (path: string, signal: AbortSignal) => Promise<DirectoryListing>;
+    /**
+     * List one directory (one level); `''` means the session workspace root.
+     * `include` names ONE child that must be present in the page: the entry cap is
+     * applied before the sort, so a huge folder can answer a page without the very
+     * row this tab has to select. `''` asks for no such guarantee.
+     */
+    readonly list: (path: string, signal: AbortSignal, include?: string) => Promise<DirectoryListing>;
     /** Open a file the way every other reference does. */
     readonly openFile: (path: string) => void;
     /** Hand a path to the OS file manager. */

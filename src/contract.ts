@@ -140,6 +140,11 @@ export interface ExternalAccessScope {
 export interface DirectoryEntry {
   readonly name: string
   readonly kind: 'file' | 'dir'
+  /**
+   * True on the ONE row a caller asked for by name when the entry cap had cut it
+   * away (the first row of the page). Absent on every ordinary row.
+   */
+  readonly pinned?: true
 }
 
 /** Why a directory could not be listed (the browser says which, in its own words). */
@@ -161,6 +166,26 @@ export interface DirectoryListing {
   readonly truncated?: true
   readonly drives?: readonly string[]
   readonly error?: DirectoryRefusal
+}
+
+/** One row of a chooser listing: a directory entry that says whether it opens. */
+export interface BrowseEntry extends DirectoryEntry {
+  /** Whether this folder has a subdirectory; absent when the probe ran out of budget. */
+  readonly hasChildren?: boolean
+}
+
+/**
+ * One listing for the folder chooser, which browses as the user types.
+ *
+ * `path` is the directory actually listed; `requested` is the asked-for path in the
+ * same canonical spelling (so it always starts with `path` and the caller can slice
+ * the remainder off), present ONLY when the two differ — a path that does not exist
+ * is answered with its longest valid directory prefix, so the chooser keeps showing
+ * that prefix's children while the remainder of the typed path becomes its filter.
+ */
+export interface BrowseListing extends Omit<DirectoryListing, 'entries'> {
+  readonly entries: readonly BrowseEntry[]
+  readonly requested?: string
 }
 
 /** One file filter. Legacy string values remain accepted as exact, insensitive rules. */
@@ -233,7 +258,35 @@ export interface AtFileSettings {
    * the local opener is the behaviour that came first.
    */
   readonly folderOpen?: FolderOpenTarget
+  /** Whether the session history jump (palette + roaming) is active. */
+  readonly historyJump?: boolean
+  /** History frame granularity: one per user message, or one per turn. */
+  readonly historyJumpFrames?: HistoryFrameMode
+  /** Whether reusing a history message replaces the draft or appends to it. */
+  readonly historyJumpReuseMode?: HistoryReuseMode
+  /**
+   * Whether the history walk follows where the user is actually looking (A-19).
+   *
+   * Off by default: each feature keeps its own position, so scrolling the chat or
+   * jumping with the ruler changes what is on screen without silently redefining
+   * "the previous message". Turning it on makes a manual move — a scroll, or a
+   * ruler jump, which is itself a scroll — re-seat the internal position on
+   * whatever is at the reading line.
+   */
+  readonly historyJumpSmartFollow?: boolean
 }
+
+/** How reusing a history message treats the composer's current draft. */
+export type HistoryReuseMode = 'replace' | 'append'
+
+/**
+ * History frame granularity.
+ *
+ * `message` is the default: every user message — including a mid-turn
+ * `steering` interjection — gets its own frame, because each is independently
+ * worth reusing. `turn` keeps only a turn's first user message.
+ */
+export type HistoryFrameMode = 'message' | 'turn'
 
 /** How a folder reference opens when it is clicked. */
 export type FolderOpenTarget = 'both' | 'sidebar' | 'native'
@@ -252,6 +305,10 @@ export type AtFileSettingsUpdate =
   | { readonly field: 'usage'; readonly value: UsageEntry[] }
   | { readonly field: 'externalRefs'; readonly value: ExternalRef[] }
   | { readonly field: 'folderOpen'; readonly value: FolderOpenTarget }
+  | { readonly field: 'historyJump'; readonly value: boolean }
+  | { readonly field: 'historyJumpFrames'; readonly value: HistoryFrameMode }
+  | { readonly field: 'historyJumpReuseMode'; readonly value: HistoryReuseMode }
+  | { readonly field: 'historyJumpSmartFollow'; readonly value: boolean }
 
 /** Wire codec: one session identity (branded string on the wire). */
 export const sessionIdSchema = z.string().min(1)
@@ -315,6 +372,7 @@ export const externalAccessScopeSchema = z.object({
 export const directoryEntrySchema = z.object({
   name: z.string(),
   kind: z.enum(['file', 'dir']),
+  pinned: z.literal(true).optional(),
 }).readonly()
 
 /** Wire schema of one one-level directory listing. */
@@ -327,8 +385,59 @@ export const directoryListingSchema = z.object({
   error: z.enum(['outside', 'missing', 'notDirectory']).optional(),
 }).readonly()
 
+/** Wire schema of one chooser row. */
+export const browseEntrySchema = z.object({
+  name: z.string(),
+  kind: z.enum(['file', 'dir']),
+  hasChildren: z.boolean().optional(),
+}).readonly()
+
+/** Wire schema of one chooser listing. */
+export const browseListingSchema = z.object({
+  path: z.string(),
+  parent: z.string().optional(),
+  requested: z.string().optional(),
+  entries: z.array(browseEntrySchema),
+  truncated: z.literal(true).optional(),
+  drives: z.array(z.string()).optional(),
+  error: z.enum(['outside', 'missing', 'notDirectory']).optional(),
+}).readonly()
+
+/** Why one candidate folder is offered (the chooser groups and orders by this). */
+export type RecentFolderReason = 'sibling' | 'parent' | 'child' | 'recent' | 'family'
+
+/** One folder the chooser offers before browsing: where it is, and why. */
+export interface RecentFolder {
+  /** Absolute path, forward slashes (the wire spelling used everywhere else). */
+  readonly path: string
+  /** Last path segment, for the row label. */
+  readonly name: string
+  /** The strongest reason this folder is in the list. */
+  readonly reason: RecentFolderReason
+}
+
+/** Wire schema of one offered folder. */
+export const recentFolderSchema = z.object({
+  path: z.string().min(1),
+  name: z.string(),
+  reason: z.enum(['sibling', 'parent', 'child', 'recent', 'family']),
+}).readonly()
+
 /** Wire schema of one directory target (`''` means the session workspace root). */
 export const directoryTargetSchema = z.string().max(4096)
+
+/**
+ * Wire schema of the ONE child name a listing caller wants present (`''` means
+ * no preference).
+ *
+ * A `list` page is capped by entry count, and the cap is applied before the
+ * sort, so on a folder with thousands of children the page can miss the exact
+ * entry the caller cares about. The folder tab passes the object it must select
+ * here; the Host re-checks that ONE name and puts it first when the page dropped
+ * it. Empty is the "no preference" spelling, matching `''` = workspace root
+ * above, so the parameter stays a plain required string.
+ */
+export const directoryEntryNameSchema = z.string().max(255)
 
 /** Strict wire codec for one structured file filter. */
 export const fileIgnoreRuleSchema = z.object({
@@ -390,6 +499,15 @@ export const atFileSettingsSchema = z.object({
   // codec, so a field missing here can never be written back or read again —
   // the client would silently keep showing the default.
   folderOpen: z.enum(['both', 'sidebar', 'native']).default('both'),
+  // The history-jump settings, declared in the RESULT codec as well as the
+  // update union: a field missing here is dropped on the way back to the
+  // browser, so the settings row would silently revert to its default.
+  historyJump: z.boolean().default(true),
+  historyJumpFrames: z.enum(['message', 'turn']).default('message'),
+  historyJumpReuseMode: z.enum(['replace', 'append']).default('replace'),
+  // Smart follow is OFF unless asked for: following the scroll would otherwise
+  // make a plain look-around silently redefine the chord's reuse position.
+  historyJumpSmartFollow: z.boolean().default(false),
 }).readonly()
 
 /** Strict wire codec for one field update. */
@@ -408,6 +526,10 @@ export const atFileSettingsUpdateSchema = z.discriminatedUnion('field', [
   z.object({ field: z.literal('recentFiles'), value: z.array(workspaceRecentFilesSchema) }).readonly(),
   z.object({ field: z.literal('usage'), value: z.array(usageEntrySchema) }).readonly(),
   z.object({ field: z.literal('folderOpen'), value: z.enum(['both', 'sidebar', 'native']) }).readonly(),
+  z.object({ field: z.literal('historyJump'), value: z.boolean() }).readonly(),
+  z.object({ field: z.literal('historyJumpFrames'), value: z.enum(['message', 'turn']) }).readonly(),
+  z.object({ field: z.literal('historyJumpReuseMode'), value: z.enum(['replace', 'append']) }).readonly(),
+  z.object({ field: z.literal('historyJumpSmartFollow'), value: z.boolean() }).readonly(),
 ])
 
 /**
@@ -526,9 +648,43 @@ export const AT_FILE_INVOCATIONS: readonly InvocationDescriptor[] = [
         source: 'json',
         codec: strictCodec('dsh-atlas#DirectoryTarget', directoryTargetSchema),
       },
+      {
+        name: 'include',
+        wire: 'include',
+        source: 'json',
+        codec: strictCodec('dsh-atlas#DirectoryEntryName', directoryEntryNameSchema),
+      },
     ],
     cancellation: { parameter: 'signal' },
     result: strictCodec('dsh-atlas#DirectoryListing', directoryListingSchema),
+  },
+  {
+    id: 'dsh-atlas#atFile/browse',
+    service: 'atFile',
+    namespace: 'atFile',
+    method: 'browse',
+    invocation: { kind: 'direct' },
+    parameters: [
+      agentLookupParameter,
+      {
+        name: 'path',
+        wire: 'path',
+        source: 'json',
+        codec: strictCodec('dsh-atlas#DirectoryTarget', directoryTargetSchema),
+      },
+    ],
+    cancellation: { parameter: 'signal' },
+    result: strictCodec('dsh-atlas#BrowseListing', browseListingSchema),
+  },
+  {
+    id: 'dsh-atlas#atFile/recentFolders',
+    service: 'atFile',
+    namespace: 'atFile',
+    method: 'recentFolders',
+    invocation: { kind: 'direct' },
+    parameters: [agentLookupParameter],
+    cancellation: { parameter: 'signal' },
+    result: strictCodec('dsh-atlas#RecentFolder[]', z.array(recentFolderSchema)),
   },
 ]
 

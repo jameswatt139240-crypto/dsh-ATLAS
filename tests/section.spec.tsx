@@ -46,6 +46,11 @@ function props(over: {
   setEnablePlugins?: (enablePlugins: boolean) => Promise<void>
   setIgnorePastedMentions?: (ignore: boolean) => Promise<void>
   setFolderOpen?: (target: FolderOpenTarget) => Promise<void>
+  setHistoryJump?: (enabled: boolean) => Promise<void>
+  setHistoryJumpFrames?: (mode: HistoryFrameMode) => Promise<void>
+  setHistoryJumpReuseMode?: (mode: HistoryReuseMode) => Promise<void>
+  setHistoryJumpSmartFollow?: (enabled: boolean) => Promise<void>
+  settings?: Partial<AtFileSettings>
   setIgnoreFiles?: (ignoreFiles: readonly FileIgnoreRuleInput[]) => Promise<void>
   setWorkspaceIgnoreFiles?: (workspace: string, ignoreFiles: readonly FileIgnoreRuleInput[]) => Promise<void>
   viewState?: AtFileSectionViewState
@@ -60,6 +65,7 @@ function props(over: {
           ignoreFiles: [...entry.ignoreFiles],
         })),
         ignorePastedMentions: over.ignorePastedMentions ?? true,
+        ...over.settings,
       }
   const items = [...over.workspaces ?? []]
   const sessionState = over.currentCwd === undefined
@@ -79,6 +85,10 @@ function props(over: {
     setEnablePlugins: over.setEnablePlugins ?? (async () => {}),
     setIgnorePastedMentions: over.setIgnorePastedMentions ?? (async () => {}),
     setFolderOpen: over.setFolderOpen ?? (async () => {}),
+    setHistoryJump: over.setHistoryJump ?? (async () => {}),
+    setHistoryJumpFrames: over.setHistoryJumpFrames ?? (async () => {}),
+    setHistoryJumpReuseMode: over.setHistoryJumpReuseMode ?? (async () => {}),
+    setHistoryJumpSmartFollow: over.setHistoryJumpSmartFollow ?? (async () => {}),
     setIgnoreFiles: over.setIgnoreFiles ?? (async () => {}),
     setWorkspaceIgnoreFiles: over.setWorkspaceIgnoreFiles ?? (async () => {}),
     close: () => {},
@@ -145,7 +155,9 @@ describe('AtFileSection', () => {
       <AtFileSection {...props({ setEnableSkills, setEnableChats, setEnablePlugins })} />,
     )
     const checkboxes = [...container.querySelectorAll('input[type="checkbox"]')] as HTMLInputElement[]
-    expect(checkboxes).toHaveLength(6)
+    // Six toggles, the history-jump switch that card added, and the smart-follow
+    // opt-in A-19 item 3 added after the reuse-mode select.
+    expect(checkboxes).toHaveLength(8)
     expect(checkboxes[1]!.checked).toBe(true)
     expect(checkboxes[2]!.checked).toBe(true)
     expect(checkboxes[3]!.checked).toBe(true)
@@ -382,22 +394,85 @@ describe('AtFileSection', () => {
   it('labels a filesystem root used as the current workspace', () => {
     const { root, container } = mount(<AtFileSection {...props({ currentCwd: '/' })} />)
     click(button(container, zh['settings.workspace']))
-    // Scoped to the workspace picker: the section also carries the
-    // folder-open select, whose options are not workspace rows.
+    // Scoped to the workspace picker: the two history selects below it are not
+    // workspace rows either, and one of them also offers a '/' option.
     expect(container.querySelector('.dsh_atFile_workspaceSelect option')?.textContent).toBe('/ - /')
     root.unmount()
   })
 
-  it('writes the folder-open choice through the injected verb', () => {
+  it('no longer offers the folder-open setting at all (A-16.7)', () => {
     const setFolderOpen = vi.fn(async () => {})
     const { root, container } = mount(<AtFileSection {...props({ setFolderOpen })} />)
-    const select = container.querySelector('.dsh_atFile_folderOpenSelect') as HTMLSelectElement
-    // Default first, then the write, exactly like the other controls here.
-    expect(select.value).toBe('both')
+    // The card is gone because the choice is gone: a folder reference opens in the
+    // sidebar alone, so the copy must not linger either — and the injected verb,
+    // which stays for the persisted field, must not be driven by anything.
+    expect(container.textContent).not.toContain('点击文件夹时')
+    expect(container.textContent).not.toContain('侧边栏 + 本地打开')
+    expect(container.querySelectorAll('select.dsh_atFile_folderOpenSelect')).toHaveLength(2)
+    expect(setFolderOpen).not.toHaveBeenCalled()
+    root.unmount()
+  })
+
+  it('writes the history-jump toggle through the injected verb', () => {
+    const setHistoryJump = vi.fn(async () => {})
+    const { root, container } = mount(<AtFileSection {...props({ setHistoryJump })} />)
+    // Located by its own label rather than by position, so another card inserted
+    // above it cannot silently retarget this assertion.
+    const cards = [...container.querySelectorAll('label.dsh_atFile_card')]
+    const card = cards.find(node => node.textContent?.includes(zh['settings.historyJump']))
+    const checkbox = card?.querySelector('input[type="checkbox"]') as HTMLInputElement
+    expect(checkbox.checked).toBe(true)
+    click(checkbox)
+    expect(setHistoryJump).toHaveBeenCalledWith(false)
+    root.unmount()
+  })
+
+  it('writes the history granularity and reuse choices through their verbs', () => {
+    const setHistoryJumpFrames = vi.fn(async () => {})
+    const setHistoryJumpReuseMode = vi.fn(async () => {})
+    const { root, container } = mount(
+      <AtFileSection {...props({ setHistoryJumpFrames, setHistoryJumpReuseMode })} />,
+    )
+    const selects = [...container.querySelectorAll('.dsh_atFile_folderOpenSelect')] as HTMLSelectElement[]
+    // Granularity, reuse — in render order. (The folder-open select that used to
+    // sit ahead of them is gone as of A-16.7, so these indices moved up by one.)
+    expect(selects).toHaveLength(2)
+    // A-33: the ladder is the page's turn ruler, so `turn` is what an unset
+    // profile must show. The message-grained walk is still reachable, and the
+    // write below is what proves the other direction is wired.
+    expect(selects[0]!.value).toBe('turn')
+    expect(selects[1]!.value).toBe('replace')
     const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set
-    setter?.call(select, 'sidebar')
-    select.dispatchEvent(new Event('change', { bubbles: true }))
-    expect(setFolderOpen).toHaveBeenCalledWith('sidebar')
+    setter?.call(selects[0]!, 'message')
+    selects[0]!.dispatchEvent(new Event('change', { bubbles: true }))
+    expect(setHistoryJumpFrames).toHaveBeenCalledWith('message')
+    setter?.call(selects[1]!, 'append')
+    selects[1]!.dispatchEvent(new Event('change', { bubbles: true }))
+    expect(setHistoryJumpReuseMode).toHaveBeenCalledWith('append')
+    root.unmount()
+  })
+
+  it('writes the smart-follow choice through its verb, and defaults it off', () => {
+    // A-19 item 3. The default matters as much as the write: following the scroll
+    // redefines what "the previous message" means, so it must be opt-in. Driving
+    // the real checkbox is what proves the row is wired to the verb at all.
+    const setHistoryJumpSmartFollow = vi.fn(async () => {})
+    const { root, container } = mount(<AtFileSection {...props({ setHistoryJumpSmartFollow })} />)
+    const boxes = [...container.querySelectorAll<HTMLInputElement>('.dsh_atFile_checkbox')]
+    const follow = boxes[boxes.length - 1]!
+    expect(follow.checked).toBe(false)
+    follow.click()
+    expect(setHistoryJumpSmartFollow).toHaveBeenCalledWith(true)
+    root.unmount()
+  })
+
+  it('disables the history sub-choices while the feature is off', () => {
+    const { root, container } = mount(<AtFileSection {...props({ settings: { historyJump: false } })} />)
+    const selects = [...container.querySelectorAll('.dsh_atFile_folderOpenSelect')] as HTMLSelectElement[]
+    // Both remaining selects describe the switched-off feature, so both go dead.
+    expect(selects).toHaveLength(2)
+    expect(selects[0]!.disabled).toBe(true)
+    expect(selects[1]!.disabled).toBe(true)
     root.unmount()
   })
 })

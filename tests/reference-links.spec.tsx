@@ -17,7 +17,10 @@ import {
   ReferenceLinks,
   type ReferenceLinksProps,
 } from '../src/client/ReferenceLinks.tsx'
-import { decodeDraftReference, decodeReferenceLink, absoluteFileAddress, sessionFileAddress } from '../src/client/reference-links.ts'
+import {
+  absoluteFileAddress, decodeDraftReference, decodeReferenceLink, owningFolderOf,
+  selectionOf, sessionFileAddress,
+} from '../src/client/reference-links.ts'
 import { cssText } from '../src/client/styles.ts'
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = false
@@ -43,6 +46,11 @@ afterEach(() => {
 
 /**
  * Mount the bridge with one piece of chip DOM beside it.
+ *
+ * The ledger the real face keeps in `index.ts` is reproduced here as a plain set
+ * that FLIPS on every write (A.16), so the bridge is tested against the same
+ * contract the plugin fulfils: a click records the object, a click on the
+ * recorded object is a repeat, and the click after that is a first click again.
  * @param html - the markup the bridge must act on.
  * @param openable - whether the injected face claims an action for the chip.
  * @param resolveLabel - the injected label resolver for composer chips.
@@ -60,6 +68,8 @@ function mountBridge(
   chip: HTMLElement
   opened: ReturnType<typeof vi.fn>
   actionFor: ReturnType<typeof vi.fn>
+  repeatClick: ReturnType<typeof vi.fn>
+  noteClick: ReturnType<typeof vi.fn>
 } {
   const container = document.createElement('div')
   document.body.appendChild(container)
@@ -69,16 +79,27 @@ function mountBridge(
   const root = createRoot(container)
   liveRoots.add(root)
   const opened = vi.fn()
-  const actionFor = vi.fn((_link: unknown) => (openable ? () => { opened(_link) } : undefined))
+  // `opened` records the link alone: the repeat flag is asserted on the
+  // `actionFor` spy instead, so the many existing `toHaveBeenCalledWith(link)`
+  // assertions keep meaning exactly what they meant.
+  const actionFor = vi.fn((_link: unknown, _again?: boolean) => (openable ? () => { opened(_link) } : undefined))
+  const clicked = new Set<string>()
+  const key = (link: unknown): string => String((link as { path?: string }).path ?? '')
+  const repeatClick = vi.fn((link: unknown) => clicked.has(key(link)))
+  const noteClick = vi.fn((link: unknown) => {
+    const one = key(link)
+    if (clicked.has(one)) clicked.delete(one)
+    else clicked.add(one)
+  })
   const useInput = (select: (state: { draft: string }) => unknown): unknown => select({ draft })
   flushSync(() => {
-    root.render(<ReferenceLinks {...({ actionFor, resolveLabel, useInput } as unknown as ReferenceLinksProps)} />)
+    root.render(<ReferenceLinks {...({ actionFor, resolveLabel, repeatClick, noteClick, useInput } as unknown as ReferenceLinksProps)} />)
   })
   // Flush the passive effects (the mark sweep, the observer, the listeners) now,
   // so a test that unmounts in the same tick tears them down instead of leaving
   // the observer for a later microtask to install after the cleanup ran.
   flushSync(() => {})
-  return { root, host, chip: host.firstElementChild as HTMLElement, opened, actionFor }
+  return { root, host, chip: host.firstElementChild as HTMLElement, opened, actionFor, repeatClick, noteClick }
 }
 
 /** Re-render the bridge with a different injected face. */
@@ -87,6 +108,8 @@ function rerenderBridge(root: Root, actionFor: unknown): void {
     root.render(<ReferenceLinks {...({
       actionFor,
       resolveLabel: (label: string) => label,
+      repeatClick: () => false,
+      noteClick: () => {},
       useInput: (select: (state: { draft: string }) => unknown) => select({ draft: '' }),
     } as unknown as ReferenceLinksProps)} />)
   })
@@ -94,8 +117,8 @@ function rerenderBridge(root: Root, actionFor: unknown): void {
 }
 
 /** A click as a browser delivers it outside a selection. */
-const click = (target: Element): MouseEvent => {
-  const event = new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 })
+const click = (target: Element, detail = 1): MouseEvent => {
+  const event = new MouseEvent('click', { bubbles: true, cancelable: true, detail })
   target.dispatchEvent(event)
   return event
 }
@@ -318,6 +341,61 @@ describe('draftPathForLabel', () => {
     // A quoted mention holds whitespace, so it cannot be read as one token here.
     expect(draftPathForLabel('@"a b/index.ts"', 'index.ts')).toBeUndefined()
   })
+  it('never reads the scope of a plugin mention as a file path (m05904)', () => {
+    // The chip body is a bare basename and the module name happens to end in that
+    // same word: a plugin is a label, so nothing is offered.
+    expect(draftPathForLabel('@plugin:@sidequest-007/dsh-atlas', 'dsh-atlas')).toBeUndefined()
+  })
+})
+
+describe('owningFolderOf', () => {
+  it('splits a path into the folder it lives in and the name to select there', () => {
+    expect(owningFolderOf('/ws/src/a.ts')).toEqual({ dir: '/ws/src', select: 'a.ts' })
+    expect(owningFolderOf('src/a.ts')).toEqual({ dir: 'src', select: 'a.ts' })
+    expect(owningFolderOf('E:/Eason/Rust/DSH')).toEqual({ dir: 'E:/Eason/Rust', select: 'DSH' })
+    expect(owningFolderOf('E:\\Eason\\Rust\\DSH\\a.ts')).toEqual({ dir: 'E:/Eason/Rust/DSH', select: 'a.ts' })
+  })
+
+  it('keeps the POSIX root, and gives a drive root its own spelling', () => {
+    // A leading separator IS the root: stripping it would make the caller read
+    // the answer as a workspace-relative parent.
+    expect(owningFolderOf('/etc')).toEqual({ dir: '/', select: 'etc' })
+    // A bare drive has no name to select, and its own root is what to open.
+    expect(owningFolderOf('E:')).toEqual({ dir: 'E:/', select: '' })
+    expect(owningFolderOf('E:/')).toEqual({ dir: 'E:/', select: '' })
+  })
+
+  it('answers a bare name with the top of its own scope', () => {
+    // No separator: the name sits at the top of whatever the path is relative
+    // to, which for a reference is the session workspace.
+    expect(owningFolderOf('a.ts')).toEqual({ dir: '', select: 'a.ts' })
+    expect(owningFolderOf('AGENTS.md')).toEqual({ dir: '', select: 'AGENTS.md' })
+  })
+
+  it('ignores trailing separators instead of selecting an empty name', () => {
+    // The user clicked a folder: `@docs/` must mean the folder `docs`, not a
+    // child of it with no name at all.
+    expect(owningFolderOf('docs/')).toEqual({ dir: '', select: 'docs' })
+    expect(owningFolderOf('/ws/src/')).toEqual({ dir: '/ws', select: 'src' })
+    expect(owningFolderOf('E:/Eason/')).toEqual({ dir: 'E:/', select: 'Eason' })
+  })
+})
+
+describe('selectionOf', () => {
+  it('reads the one key a folder tab is told to select', () => {
+    expect(selectionOf({ select: 'a.ts' })).toBe('a.ts')
+    // A foreign key, or our key with a value that names nothing, selects nothing.
+    expect(selectionOf({ other: 'a.ts' })).toBeUndefined()
+    expect(selectionOf({ select: '' })).toBeUndefined()
+    expect(selectionOf({ select: 12 })).toBeUndefined()
+  })
+
+  it('reads a stale or missing navigation as nothing to select, never as a crash', () => {
+    expect(selectionOf(undefined)).toBeUndefined()
+    expect(selectionOf(null)).toBeUndefined()
+    expect(selectionOf('a.ts')).toBeUndefined()
+    expect(selectionOf(7)).toBeUndefined()
+  })
 })
 
 describe('ReferenceLinks bridge', () => {
@@ -378,8 +456,11 @@ describe('ReferenceLinks bridge', () => {
     unmountBridge(root)
   })
 
-  it('ignores double clicks and clicks that end inside a selection', () => {
+  it('ignores a double-click event for an object it never saw clicked, and clicks that end inside a selection', () => {
     const { root, chip, opened } = mountBridge(FILE_CHIP)
+    // `detail > 1` on its own is a gesture this bridge did not start (nothing was
+    // clicked before it): the SECOND click of a double-click is a repeat only
+    // when the ledger says so, and here it says nothing.
     chip.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 2 }))
     expect(opened).not.toHaveBeenCalled()
     // A drag-select that finishes on the chip must not open it.
@@ -394,6 +475,73 @@ describe('ReferenceLinks bridge', () => {
     // detail 0 is a synthetic (keyboard) click: no selection gesture to protect.
     chip.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 0 }))
     expect(opened).toHaveBeenCalledTimes(1)
+    unmountBridge(root)
+  })
+
+  it('asks for the repeat action on the second click, at whatever speed it arrives', () => {
+    const { root, chip, opened, actionFor } = mountBridge(FILE_CHIP)
+    // Two plain clicks in the SAME tick: nothing consults `detail`, so the second
+    // one is recognised by the ledger alone (m02489: 「不应该靠快速双击」).
+    click(chip)
+    click(chip)
+    expect(opened).toHaveBeenCalledTimes(2)
+    const answered = actionFor.mock.calls.filter(call => call.length > 1)
+    expect(answered.map(call => call[1])).toEqual([false, true])
+    unmountBridge(root)
+  })
+
+  it('returns to the first meaning on the click after the repeat', () => {
+    const { root, chip, opened, actionFor } = mountBridge(FILE_CHIP)
+    click(chip)
+    click(chip)
+    click(chip)
+    expect(opened).toHaveBeenCalledTimes(3)
+    // A ledger that only ever GREW would leave the user stuck in the second
+    // meaning with no way back to the first; writing therefore flips it.
+    const answered = actionFor.mock.calls.filter(call => call.length > 1)
+    expect(answered.map(call => call[1])).toEqual([false, true, false])
+    unmountBridge(root)
+  })
+
+  it('recognises the repeat of one object, and never confuses two of them', () => {
+    const { root, host, opened, actionFor } = mountBridge(`${FILE_CHIP}<span data-ref-chip="file" title="@src/b.ts">b.ts</span>`)
+    const [first, second] = [...host.children] as [HTMLElement, HTMLElement]
+    click(first)
+    // A different object is a FIRST click even though a click happened just before.
+    click(second)
+    click(second)
+    expect(opened).toHaveBeenCalledTimes(3)
+    const answered = actionFor.mock.calls.filter(call => call.length > 1)
+    expect(answered.map(call => call[1])).toEqual([false, false, true])
+    unmountBridge(root)
+  })
+
+  it('lets the repeat through even when it ends inside a text selection', () => {
+    const { root, chip, opened, actionFor } = mountBridge(FILE_CHIP)
+    click(chip)
+    // The plain-click rule exists to protect a selection gesture, so a real
+    // double-click's second event — which IS inside the word it selected — must
+    // not be vetoed when the ledger already knows this is the same object.
+    const range = document.createRange()
+    range.selectNodeContents(chip)
+    const selection = document.getSelection() as Selection
+    selection.removeAllRanges()
+    selection.addRange(range)
+    click(chip, 2)
+    expect(opened).toHaveBeenCalledTimes(2)
+    expect(actionFor.mock.calls.filter(call => call.length > 1).at(-1)?.[1]).toBe(true)
+    selection.removeAllRanges()
+    unmountBridge(root)
+  })
+
+  it('does not spend the sequence on a reference this build cannot open', () => {
+    const { root, chip, opened, noteClick } = mountBridge(FILE_CHIP, false)
+    click(chip)
+    click(chip)
+    expect(opened).not.toHaveBeenCalled()
+    // Recording a click that ran no action would make the NEXT click a "second"
+    // one although the user never saw a first.
+    expect(noteClick).not.toHaveBeenCalled()
     unmountBridge(root)
   })
 
@@ -586,7 +734,7 @@ describe('ReferenceLinks bridge', () => {
     const next = vi.fn(() => () => { opened({ from: 'next' }) })
     rerenderBridge(root, next)
     click(chip)
-    expect(next).toHaveBeenCalledWith({ kind: 'file', path: 'outsidedir/关于源代码许可的分析.md' })
+    expect(next).toHaveBeenCalledWith({ kind: 'file', path: 'outsidedir/关于源代码许可的分析.md' }, false)
     // The stale face's action never ran: only the newest one answered the click.
     expect(opened).toHaveBeenCalledExactlyOnceWith({ from: 'next' })
     unmountBridge(root)

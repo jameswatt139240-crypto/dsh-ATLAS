@@ -106,6 +106,11 @@ export interface ExternalAccessScope {
 export interface DirectoryEntry {
     readonly name: string;
     readonly kind: 'file' | 'dir';
+    /**
+     * True on the ONE row a caller asked for by name when the entry cap had cut it
+     * away (the first row of the page). Absent on every ordinary row.
+     */
+    readonly pinned?: true;
 }
 /** Why a directory could not be listed (the browser says which, in its own words). */
 export type DirectoryRefusal = 'outside' | 'missing' | 'notDirectory';
@@ -125,6 +130,24 @@ export interface DirectoryListing {
     readonly truncated?: true;
     readonly drives?: readonly string[];
     readonly error?: DirectoryRefusal;
+}
+/** One row of a chooser listing: a directory entry that says whether it opens. */
+export interface BrowseEntry extends DirectoryEntry {
+    /** Whether this folder has a subdirectory; absent when the probe ran out of budget. */
+    readonly hasChildren?: boolean;
+}
+/**
+ * One listing for the folder chooser, which browses as the user types.
+ *
+ * `path` is the directory actually listed; `requested` is the asked-for path in the
+ * same canonical spelling (so it always starts with `path` and the caller can slice
+ * the remainder off), present ONLY when the two differ — a path that does not exist
+ * is answered with its longest valid directory prefix, so the chooser keeps showing
+ * that prefix's children while the remainder of the typed path becomes its filter.
+ */
+export interface BrowseListing extends Omit<DirectoryListing, 'entries'> {
+    readonly entries: readonly BrowseEntry[];
+    readonly requested?: string;
 }
 /** One file filter. Legacy string values remain accepted as exact, insensitive rules. */
 export interface FileIgnoreRule {
@@ -191,7 +214,33 @@ export interface AtFileSettings {
      * the local opener is the behaviour that came first.
      */
     readonly folderOpen?: FolderOpenTarget;
+    /** Whether the session history jump (palette + roaming) is active. */
+    readonly historyJump?: boolean;
+    /** History frame granularity: one per user message, or one per turn. */
+    readonly historyJumpFrames?: HistoryFrameMode;
+    /** Whether reusing a history message replaces the draft or appends to it. */
+    readonly historyJumpReuseMode?: HistoryReuseMode;
+    /**
+     * Whether the history walk follows where the user is actually looking (A-19).
+     *
+     * Off by default: each feature keeps its own position, so scrolling the chat or
+     * jumping with the ruler changes what is on screen without silently redefining
+     * "the previous message". Turning it on makes a manual move — a scroll, or a
+     * ruler jump, which is itself a scroll — re-seat the internal position on
+     * whatever is at the reading line.
+     */
+    readonly historyJumpSmartFollow?: boolean;
 }
+/** How reusing a history message treats the composer's current draft. */
+export type HistoryReuseMode = 'replace' | 'append';
+/**
+ * History frame granularity.
+ *
+ * `message` is the default: every user message — including a mid-turn
+ * `steering` interjection — gets its own frame, because each is independently
+ * worth reusing. `turn` keeps only a turn's first user message.
+ */
+export type HistoryFrameMode = 'message' | 'turn';
 /** How a folder reference opens when it is clicked. */
 export type FolderOpenTarget = 'both' | 'sidebar' | 'native';
 /** One field update sent through the plugin-owned settings Remote. */
@@ -231,6 +280,18 @@ export type AtFileSettingsUpdate = {
 } | {
     readonly field: 'folderOpen';
     readonly value: FolderOpenTarget;
+} | {
+    readonly field: 'historyJump';
+    readonly value: boolean;
+} | {
+    readonly field: 'historyJumpFrames';
+    readonly value: HistoryFrameMode;
+} | {
+    readonly field: 'historyJumpReuseMode';
+    readonly value: HistoryReuseMode;
+} | {
+    readonly field: 'historyJumpSmartFollow';
+    readonly value: boolean;
 };
 /** Wire codec: one session identity (branded string on the wire). */
 export declare const sessionIdSchema: z.ZodString;
@@ -304,6 +365,7 @@ export declare const directoryEntrySchema: z.ZodReadonly<z.ZodObject<{
         file: "file";
         dir: "dir";
     }>;
+    pinned: z.ZodOptional<z.ZodLiteral<true>>;
 }, z.core.$strip>>;
 /** Wire schema of one one-level directory listing. */
 export declare const directoryListingSchema: z.ZodReadonly<z.ZodObject<{
@@ -315,6 +377,7 @@ export declare const directoryListingSchema: z.ZodReadonly<z.ZodObject<{
             file: "file";
             dir: "dir";
         }>;
+        pinned: z.ZodOptional<z.ZodLiteral<true>>;
     }, z.core.$strip>>>;
     truncated: z.ZodOptional<z.ZodLiteral<true>>;
     drives: z.ZodOptional<z.ZodArray<z.ZodString>>;
@@ -324,8 +387,73 @@ export declare const directoryListingSchema: z.ZodReadonly<z.ZodObject<{
         notDirectory: "notDirectory";
     }>>;
 }, z.core.$strip>>;
+/** Wire schema of one chooser row. */
+export declare const browseEntrySchema: z.ZodReadonly<z.ZodObject<{
+    name: z.ZodString;
+    kind: z.ZodEnum<{
+        file: "file";
+        dir: "dir";
+    }>;
+    hasChildren: z.ZodOptional<z.ZodBoolean>;
+}, z.core.$strip>>;
+/** Wire schema of one chooser listing. */
+export declare const browseListingSchema: z.ZodReadonly<z.ZodObject<{
+    path: z.ZodString;
+    parent: z.ZodOptional<z.ZodString>;
+    requested: z.ZodOptional<z.ZodString>;
+    entries: z.ZodArray<z.ZodReadonly<z.ZodObject<{
+        name: z.ZodString;
+        kind: z.ZodEnum<{
+            file: "file";
+            dir: "dir";
+        }>;
+        hasChildren: z.ZodOptional<z.ZodBoolean>;
+    }, z.core.$strip>>>;
+    truncated: z.ZodOptional<z.ZodLiteral<true>>;
+    drives: z.ZodOptional<z.ZodArray<z.ZodString>>;
+    error: z.ZodOptional<z.ZodEnum<{
+        outside: "outside";
+        missing: "missing";
+        notDirectory: "notDirectory";
+    }>>;
+}, z.core.$strip>>;
+/** Why one candidate folder is offered (the chooser groups and orders by this). */
+export type RecentFolderReason = 'sibling' | 'parent' | 'child' | 'recent' | 'family';
+/** One folder the chooser offers before browsing: where it is, and why. */
+export interface RecentFolder {
+    /** Absolute path, forward slashes (the wire spelling used everywhere else). */
+    readonly path: string;
+    /** Last path segment, for the row label. */
+    readonly name: string;
+    /** The strongest reason this folder is in the list. */
+    readonly reason: RecentFolderReason;
+}
+/** Wire schema of one offered folder. */
+export declare const recentFolderSchema: z.ZodReadonly<z.ZodObject<{
+    path: z.ZodString;
+    name: z.ZodString;
+    reason: z.ZodEnum<{
+        parent: "parent";
+        sibling: "sibling";
+        child: "child";
+        recent: "recent";
+        family: "family";
+    }>;
+}, z.core.$strip>>;
 /** Wire schema of one directory target (`''` means the session workspace root). */
 export declare const directoryTargetSchema: z.ZodString;
+/**
+ * Wire schema of the ONE child name a listing caller wants present (`''` means
+ * no preference).
+ *
+ * A `list` page is capped by entry count, and the cap is applied before the
+ * sort, so on a folder with thousands of children the page can miss the exact
+ * entry the caller cares about. The folder tab passes the object it must select
+ * here; the Host re-checks that ONE name and puts it first when the page dropped
+ * it. Empty is the "no preference" spelling, matching `''` = workspace root
+ * above, so the parameter stays a plain required string.
+ */
+export declare const directoryEntryNameSchema: z.ZodString;
 /** Strict wire codec for one structured file filter. */
 export declare const fileIgnoreRuleSchema: z.ZodReadonly<z.ZodObject<{
     kind: z.ZodEnum<{
@@ -412,6 +540,16 @@ export declare const atFileSettingsSchema: z.ZodReadonly<z.ZodObject<{
         sidebar: "sidebar";
         native: "native";
     }>>;
+    historyJump: z.ZodDefault<z.ZodBoolean>;
+    historyJumpFrames: z.ZodDefault<z.ZodEnum<{
+        message: "message";
+        turn: "turn";
+    }>>;
+    historyJumpReuseMode: z.ZodDefault<z.ZodEnum<{
+        replace: "replace";
+        append: "append";
+    }>>;
+    historyJumpSmartFollow: z.ZodDefault<z.ZodBoolean>;
 }, z.core.$strip>>;
 /** Strict wire codec for one field update. */
 export declare const atFileSettingsUpdateSchema: z.ZodDiscriminatedUnion<[z.ZodReadonly<z.ZodObject<{
@@ -475,6 +613,24 @@ export declare const atFileSettingsUpdateSchema: z.ZodDiscriminatedUnion<[z.ZodR
         sidebar: "sidebar";
         native: "native";
     }>;
+}, z.core.$strip>>, z.ZodReadonly<z.ZodObject<{
+    field: z.ZodLiteral<"historyJump">;
+    value: z.ZodBoolean;
+}, z.core.$strip>>, z.ZodReadonly<z.ZodObject<{
+    field: z.ZodLiteral<"historyJumpFrames">;
+    value: z.ZodEnum<{
+        message: "message";
+        turn: "turn";
+    }>;
+}, z.core.$strip>>, z.ZodReadonly<z.ZodObject<{
+    field: z.ZodLiteral<"historyJumpReuseMode">;
+    value: z.ZodEnum<{
+        replace: "replace";
+        append: "append";
+    }>;
+}, z.core.$strip>>, z.ZodReadonly<z.ZodObject<{
+    field: z.ZodLiteral<"historyJumpSmartFollow">;
+    value: z.ZodBoolean;
 }, z.core.$strip>>], "field">;
 /**
  * The built-in `@git` provider's shared facts.

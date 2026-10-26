@@ -49,6 +49,14 @@ describe('mention token patterns', () => {
     expect('use @skill:blender-modeling now'.match(SKILL_MENTION_PATTERN)?.[0]).toBe('@skill:blender-modeling')
     expect('try @plugin:dsh-atlas'.match(PLUGIN_MENTION_PATTERN)?.[0]).toBe('@plugin:dsh-atlas')
   })
+
+  it('keeps a scoped module name whole, scope and all (m05904)', () => {
+    // The token is the npm module name, so it may carry its own `@scope/`.
+    expect('try @plugin:@sidequest-007/dsh-atlas now'.match(PLUGIN_MENTION_PATTERN)?.[0])
+      .toBe('@plugin:@sidequest-007/dsh-atlas')
+    // A bare category prefix is still just prose, as before.
+    expect('@plugin: '.match(PLUGIN_MENTION_PATTERN)).toBeNull()
+  })
 })
 
 describe('expandSkillMentions', () => {
@@ -101,6 +109,24 @@ describe('expandPluginMentions', () => {
     expect(injections[0]!.content[0]).toEqual({
       type: 'text',
       text: '<plugin-reference name="dsh-atlas" />',
+    })
+  })
+
+  it('asks for the scoped module name itself, never for the bare scope (m05904)', async () => {
+    const asked: string[] = []
+    const injections = await expandPluginMentions(
+      [user('with @plugin:@sidequest-007/dsh-atlas and @plugin:dsh-atlas')],
+      name => { asked.push(name); return name === '@sidequest-007/dsh-atlas' },
+      SIGNAL,
+    )
+    // The enabled set is keyed by module name, so a scoped plugin is found only
+    // when the whole scoped name reaches the lookup.
+    expect(asked).toEqual(['@sidequest-007/dsh-atlas', 'dsh-atlas'])
+    expect(injections).toHaveLength(1)
+    expect(injections[0]!.source).toEqual({ kind: 'atlas-plugin', moduleName: '@sidequest-007/dsh-atlas' })
+    expect(injections[0]!.content[0]).toEqual({
+      type: 'text',
+      text: '<plugin-reference name="@sidequest-007/dsh-atlas" />',
     })
   })
 })

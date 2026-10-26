@@ -8,7 +8,7 @@
 import { isAbsolute, relative as pathRelative, resolve, sep } from 'node:path'
 import { stat } from 'node:fs/promises'
 import type { ReferenceInfo } from './contract.ts'
-import { allowsExternal, externalPath, type ExternalAccess } from './external.ts'
+import { allowsExternal, externalPath, isUnder, type ExternalAccess } from './external.ts'
 
 /**
  * Inspect reference paths: workspace-relative ones, plus the absolute
@@ -16,7 +16,9 @@ import { allowsExternal, externalPath, type ExternalAccess } from './external.ts
  *
  * Paths that escape the workspace, are external without access, or do not exist
  * come back with `exists: false` rather than being dropped, so the dock can
- * attribute the failure to the exact token the user typed.
+ * attribute the failure to the exact token the user typed. An absolute path that
+ * lands inside the workspace is a workspace path, not an external one, so it is
+ * inspected exactly like its relative spelling.
  * @param cwd - the session workspace root (absolute).
  * @param targets - paths as typed, already stripped of line ranges.
  * @param signal - caller lifetime.
@@ -39,7 +41,8 @@ export async function inspectReferences(
 
 /**
  * Inspect one target, confined to the workspace unless it is an allowed
- * external path.
+ * external path. An absolute path inside the workspace is the workspace case,
+ * not the external one.
  * @param cwd - the session workspace root (absolute).
  * @param target - one path as typed.
  * @param signal - caller lifetime.
@@ -48,10 +51,19 @@ export async function inspectReferences(
  */
 async function inspectOne(cwd: string, target: string, signal: AbortSignal, access?: ExternalAccess): Promise<ReferenceInfo> {
   const external = isAbsolute(target)
-  if (external && (access === undefined || !allowsExternal(access, target))) {
+  const absolute = external ? target : resolve(cwd, target)
+  // An absolute path that points INSIDE the workspace is a workspace path that
+  // merely happens to be spelled absolutely: on Linux a session rooted at
+  // `/mnt/share` names the same folder as `/mnt/share/proj` and as `proj`, and a
+  // Windows session rooted at `E:/proj` names the same tree as `E:/proj/src` and
+  // `src`. The external gate must therefore not apply to it — exactly as
+  // `list`/`browse` already rule it (`src/runtime.ts`). Without this bypass the
+  // two spellings of one folder disagreed: the relative one resolved, the
+  // absolute one was refused, and the dock painted the reference stale.
+  const inside = external && isUnder(cwd, absolute)
+  if (external && !inside && (access === undefined || !allowsExternal(access, target))) {
     return { relative: target, exists: false }
   }
-  const absolute = external ? target : resolve(cwd, target)
   const confined = pathRelative(cwd, absolute)
   if (!external && (confined === '..' || confined.startsWith(`..${sep}`) || isAbsolute(confined))) {
     return { relative: target, exists: false }
@@ -60,7 +72,7 @@ async function inspectOne(cwd: string, target: string, signal: AbortSignal, acce
   const info = await stat(absolute).catch(() => undefined)
   signal.throwIfAborted()
   if (info === undefined) return { relative: target, exists: false }
-  const marked = external ? { outside: true as const, relative: externalPath(absolute) } : {}
+  const marked = external && !inside ? { outside: true as const, relative: externalPath(absolute) } : {}
   return info.isDirectory()
     ? { relative: target, exists: true, kind: 'dir', ...marked }
     : { relative: target, exists: true, kind: 'file', size: info.size, ...marked }

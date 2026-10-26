@@ -40,8 +40,18 @@ import type { ReferenceOutcome } from './ReferenceLinks.tsx'
 
 /** What the session's overlay shares with the draft bridge. */
 export interface DraftLinksInjected {
-  /** The action a click on this mention performs, or undefined when this build has none. */
-  readonly actionFor: (link: ReferenceLink) => (() => ReferenceOutcome | Promise<ReferenceOutcome>) | undefined
+  /**
+   * The action a click on this mention performs, or undefined when this build
+   * has none. `again` is true for the SECOND click on the same object, which is
+   * what makes a folder token in the composer answer exactly like the dock's own
+   * row (A-27): the first click opens it in the right Sidebar, the second hands
+   * it to the desktop's file manager.
+   */
+  readonly actionFor: (link: ReferenceLink, again?: boolean) => (() => ReferenceOutcome | Promise<ReferenceOutcome>) | undefined
+  /** Whether the plugin's click ledger records this link as the last one opened. */
+  readonly repeatClick: (link: ReferenceLink) => boolean
+  /** Record this click in that ledger, which flips: the same link again is a new first click. */
+  readonly noteClick: (link: ReferenceLink) => void
   /** The dock's own inspection verdicts: the bridge never re-asks for the same path. */
   readonly hooks: { readonly referenceInfo: ReferenceInfoSource }
   /**
@@ -68,7 +78,7 @@ function caretOf(event: MouseEvent): { readonly node: Node; readonly offset: num
  * @param props - the injected opener and the dock's verdict source.
  * @returns nothing; this entry renders no DOM of its own.
  */
-export function DraftLinks({ actionFor, useReferenceInfo, resolveSession }: DraftLinksProps) {
+export function DraftLinks({ actionFor, repeatClick, noteClick, useReferenceInfo, resolveSession }: DraftLinksProps) {
   const infos = useReferenceInfo(snapshot => snapshot.value)
   // Keyed by the canonical spelling (`referenceKey`): the Host answers an
   // out-of-workspace path with forward slashes while the draft may spell it with
@@ -81,23 +91,39 @@ export function DraftLinks({ actionFor, useReferenceInfo, resolveSession }: Draf
   )
   // The face is re-created on every injection and every verdict lands as a new
   // array: hold it in a ref so the document listeners install ONCE per mount.
-  const face = useRef({ actionFor, verdict: (path: string) => verdictByPath.get(referenceKey(path)), resolveSession })
+  const face = useRef({ actionFor, repeatClick, noteClick, verdict: (path: string) => verdictByPath.get(referenceKey(path)), resolveSession })
   useEffect(() => {
-    face.current = { actionFor, verdict: (path: string) => verdictByPath.get(referenceKey(path)), resolveSession }
-  }, [actionFor, verdictByPath, resolveSession])
+    face.current = { actionFor, repeatClick, noteClick, verdict: (path: string) => verdictByPath.get(referenceKey(path)), resolveSession }
+  }, [actionFor, repeatClick, noteClick, verdictByPath, resolveSession])
   /** Repaint on demand from outside the install effect (a verdict that arrived late). */
   const repaint = useRef(() => {})
 
   useEffect(() => {
+    /**
+     * The action a CLICK runs: the plugin's own click ledger decides whether this
+     * is the first click on this reference or a repeat, exactly as the dock's row
+     * does. A repeat means the same thing on both surfaces (A-27); the ledger is
+     * recorded only for a click that really had something to do, so a token this
+     * build cannot open never enters it.
+     */
+    const clickActionFor = (link: ReferenceLink): (() => ReferenceOutcome | Promise<ReferenceOutcome>) | undefined => {
+      const action = face.current.actionFor(link, face.current.repeatClick(link))
+      if (action === undefined) return undefined
+      return () => {
+        const outcome = action()
+        face.current.noteClick(link)
+        return outcome
+      }
+    }
     /** The action one already-resolved token offers right now, or undefined. */
-    const activationFor = (reference: InlineToken): DraftActivation | undefined => {
+    const activationFor = (reference: InlineToken, opener = face.current.actionFor): DraftActivation | undefined => {
       // Without the highlight API nothing is painted, so nothing may act as a
       // link either: only the part the framework itself coloured stays live.
       if (!canPaintTails()) {
         const end = reference.decoratedEnd
         if (end === undefined || reference.local >= end) return undefined
       }
-      return draftActivation(reference.token, face.current.actionFor, face.current.verdict, face.current.resolveSession)
+      return draftActivation(reference.token, opener, face.current.verdict, face.current.resolveSession)
     }
     const paint = (): void => {
       const verdict = (path: string): DraftVerdict | undefined => face.current.verdict(path)
@@ -155,7 +181,7 @@ export function DraftLinks({ actionFor, useReferenceInfo, resolveSession }: Draf
       if (caret === undefined) return
       const reference = tokenAtPoint(root, caret.node, caret.offset)
       if (reference === undefined) return
-      const activation = activationFor(reference)
+      const activation = activationFor(reference, clickActionFor)
       if (activation === undefined) return
       event.preventDefault()
       event.stopPropagation()

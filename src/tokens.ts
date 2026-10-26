@@ -4,7 +4,36 @@
  * a file reference may carry a `:start[-end]` line range. The Host bundle and
  * the client bundle are built separately, so this module is the single
  * implementation of the recognition rule they must agree on.
+ *
+ * ONE form breaks that run. A plugin is named by its npm MODULE name, and a
+ * scoped module name carries an `@` of its own: `@plugin:@sidequest-007/dsh-atlas`.
+ * That inner `@` belongs to the name, not to a second mention. Reading it as a
+ * token start splits the mention in two — the plugin is then never recognized,
+ * and the scope (`sidequest-007/dsh-atlas`) is scanned as a workspace PATH that
+ * does not exist (m05904). So the plugin form is tried FIRST everywhere a token
+ * is scanned, and it swallows the scope whole.
  */
+
+/** One npm module name: an optional `@scope/`, then the name itself. */
+const MODULE_NAME_TOKEN = String.raw`(?:@[^\s@/]+\/)?[^\s@]+`
+
+/** The `@plugin:<module name>` body, scope included. */
+const PLUGIN_TOKEN = String.raw`plugin:${MODULE_NAME_TOKEN}`
+
+/**
+ * The body of any `@` mention token. The plugin form comes first, so a scoped
+ * module name matches as ONE token; every other form is the bare run — which is
+ * also what a lone category prefix (`@plugin:`, `@skill:`) still matches.
+ * Every fragment here is `String.raw`: a plain template would turn `\s` into `s`
+ * and quietly scan the wrong token.
+ */
+const MENTION_TOKEN = String.raw`(?:${PLUGIN_TOKEN}|[^\s@]+)`
+
+/** Every `@` mention token in a text, captured without the `@`. */
+export const MENTION_PATTERN = new RegExp(`@(${MENTION_TOKEN})`, 'gu')
+
+/** The `@plugin:<module>` tokens in a text, captured without the `@plugin:` prefix. */
+export const PLUGIN_MENTION_PATTERN = new RegExp(`@plugin:(${MODULE_NAME_TOKEN})`, 'gu')
 
 /** One inclusive 1-based line range on a referenced file. */
 export interface LineRange {

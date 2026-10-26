@@ -18,6 +18,8 @@ describe('AT_REMOTE', () => {
         'atFile/inspect',
         'atFile/external',
         'atFile/list',
+        'atFile/browse',
+        'atFile/recentFolders',
         'atMention/listSkills',
         'atMention/listChats',
         'atMention/listPlugins',
@@ -99,6 +101,20 @@ describe('AT_REMOTE', () => {
     // (observed live before this arm existed).
     expect(schema.parse({ field: 'folderOpen', value: 'sidebar' })).toEqual({ field: 'folderOpen', value: 'sidebar' })
     expect(() => schema.parse({ field: 'folderOpen', value: 'somewhere' })).toThrow()
+    // The three history-jump settings the settings row writes.
+    expect(schema.parse({ field: 'historyJump', value: false })).toEqual({ field: 'historyJump', value: false })
+    expect(schema.parse({ field: 'historyJumpFrames', value: 'turn' }))
+      .toEqual({ field: 'historyJumpFrames', value: 'turn' })
+    expect(schema.parse({ field: 'historyJumpReuseMode', value: 'append' }))
+      .toEqual({ field: 'historyJumpReuseMode', value: 'append' })
+    expect(() => schema.parse({ field: 'historyJumpFrames', value: 'paragraph' })).toThrow()
+    expect(() => schema.parse({ field: 'historyJumpReuseMode', value: 'prepend' })).toThrow()
+    expect(() => schema.parse({ field: 'historyJump', value: 'yes' })).toThrow()
+    // A-19 item 3's field. It must be in the update union or the toggle can never
+    // be saved at all, which is the failure `folderOpen` hit once.
+    expect(schema.parse({ field: 'historyJumpSmartFollow', value: true }))
+      .toEqual({ field: 'historyJumpSmartFollow', value: true })
+    expect(() => schema.parse({ field: 'historyJumpSmartFollow', value: 'yes' })).toThrow()
   })
 
   it('search codecs accept host entries (files and directories) and reject malformed rows', () => {
@@ -125,6 +141,10 @@ describe('AT_REMOTE', () => {
         recentFiles: [],
         usage: [],
         folderOpen: 'both',
+        historyJump: true,
+        historyJumpFrames: 'message',
+        historyJumpReuseMode: 'replace',
+        historyJumpSmartFollow: false,
       })
     expect(() => schema.parse({ enabled: true, ignoreFiles: [] })).toThrow()
     // The field has to survive the RESULT codec too: the update reply is decoded
@@ -132,15 +152,49 @@ describe('AT_REMOTE', () => {
     // back and the UI would silently revert to the default.
     expect(schema.parse({ enabled: true, ignoreFiles: [], workspaceIgnoreFiles: [], folderOpen: 'native' }))
       .toMatchObject({ folderOpen: 'native' })
+    // The same rule for the history-jump settings the settings row writes.
+    expect(schema.parse({
+      enabled: true,
+      ignoreFiles: [],
+      workspaceIgnoreFiles: [],
+      historyJump: false,
+      historyJumpFrames: 'turn',
+      historyJumpReuseMode: 'append',
+      historyJumpSmartFollow: true,
+    })).toMatchObject({
+      historyJump: false,
+      historyJumpFrames: 'turn',
+      historyJumpReuseMode: 'append',
+      historyJumpSmartFollow: true,
+    })
   })
 
   it('the directory-listing codec carries both kinds and every refusal', () => {
     const list = AT_REMOTE.descriptors.find(descriptor => descriptor.method === 'list')!
-    expect(list.parameters.map(parameter => parameter.name)).toEqual(['agent', 'path'])
+    expect(list.parameters.map(parameter => parameter.name)).toEqual(['agent', 'path', 'include'])
+    // `include` names ONE child the listing must carry even when the entry cap cut
+    // it away. It is a plain string rather than an optional field: `''` is the
+    // sentinel for "no preference", so a Host can never be handed `undefined` for a
+    // name it is about to use.
+    const include = list.parameters[2] as unknown as {
+      name: string
+      wire: string
+      codec: { schema: { parse(value: unknown): unknown } }
+    }
+    expect(include.wire).toBe('include')
+    expect(include.codec.schema.parse('late.txt')).toBe('late.txt')
+    expect(include.codec.schema.parse('')).toBe('')
+    // A name, not a path: the codec refuses anything long enough to be a walk.
+    expect(() => include.codec.schema.parse('x'.repeat(256))).toThrow()
     expect(list.cancellation).toEqual({ parameter: 'signal' })
     const schema = list.result.schema as { parse(value: unknown): unknown }
     expect(schema.parse({ path: 'E:/ws', parent: 'E:/', entries: [{ name: 'src', kind: 'dir' }] }))
       .toEqual({ path: 'E:/ws', parent: 'E:/', entries: [{ name: 'src', kind: 'dir' }] })
+    // A pinned row is the ONE entry a caller named, put back after the cap had cut
+    // it away; it rides the same codec as any other row and is only ever `true`.
+    expect(schema.parse({ path: 'E:/big', entries: [{ name: 'late.txt', kind: 'file', pinned: true }], truncated: true }))
+      .toEqual({ path: 'E:/big', entries: [{ name: 'late.txt', kind: 'file', pinned: true }], truncated: true })
+    expect(() => schema.parse({ path: 'E:/x', entries: [{ name: 'a', kind: 'file', pinned: false }] })).toThrow()
     expect(schema.parse({ path: 'E:/', entries: [], drives: ['C:/'], truncated: true }))
       .toEqual({ path: 'E:/', entries: [], drives: ['C:/'], truncated: true })
     expect(schema.parse({ path: 'E:/x', entries: [], error: 'outside' }))

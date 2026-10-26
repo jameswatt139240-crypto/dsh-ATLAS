@@ -6,7 +6,6 @@
  */
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import type { SettingsScope } from '@deepseek-ai/dsh-settings'
 import type { AtFileSettings, ExternalRef, UsageEntry, WorkspaceRecentFiles } from './contract.ts'
 import type { FileIgnoreRule } from './contract.ts'
 import { DEFAULT_IGNORE_FILES } from './defaults.ts'
@@ -69,13 +68,72 @@ export const AtFileSettingsSchema = z.object({
   }) as z<ExternalRef>).default([]),
   // Clicking a folder reference: the right Sidebar, the OS file manager, or both.
   folderOpen: z.union(['both', 'sidebar', 'native'] as const).default('both'),
+  // Session history jump: the F1 palette and the F2 roaming gesture. Declared
+  // here or the Host schema strips each write (the Web surface edits them).
+  historyJump: z.boolean().default(true),
+  // A-33: the ladder IS the page's turn ruler by default — one stop per turn,
+  // the same unit the right-side rail draws, so the readout's total and the
+  // ruler's tick count are the same number. `'message'` keeps the finer walk
+  // (every prompt AND the answer) for users who want to stop inside a turn.
+  historyJumpFrames: z.union(['message', 'turn'] as const).default('turn'),
+  historyJumpReuseMode: z.union(['replace', 'append'] as const).default('replace'),
+  // A-19 item 3: opt-in only. Following the scroll redefines what "the previous
+  // message to reuse" means, so it must never be the default.
+  historyJumpSmartFollow: z.boolean().default(false),
 }) as unknown as z<AtFileSettings>
+
+/**
+ * The settings surface this plugin consumes: the `at-file` namespace's live
+ * value and a writer for it.
+ *
+ * Stated here rather than imported because the published settings service types
+ * a composition EDITOR (`describe`/`update`/`mutate` over the profile's own
+ * entries), while this plugin owns a namespace of its own. The namespace API the
+ * runtime still answers — `register(namespace, schema, { applies: 'live' })` —
+ * is what this shape names, and {@link registerAtFileSettings} probes for it
+ * instead of assuming it, so a profile without it degrades to defaults instead
+ * of failing the whole plugin at load.
+ */
+export interface AtFileSettingsScope {
+  /** The namespace's current value, defaults applied. */
+  get(): AtFileSettings
+  /** Merge one patch into the namespace and persist it. */
+  update(patch: Partial<AtFileSettings>): Promise<void>
+}
+
+/** The one method of the settings service this plugin registers through. */
+interface NamespaceRegistrar {
+  register?<T>(namespace: string, schema: unknown, options?: { applies?: 'live' }): AtFileSettingsScope
+}
+
+/**
+ * A scope over the schema's defaults, used when the service offers no namespace
+ * API. Nothing is persisted, but the switches, filters and history knobs still
+ * answer for the life of the session instead of taking the plugin down.
+ * @returns a scope whose value starts at the schema defaults.
+ */
+function defaultScope(): AtFileSettingsScope {
+  // Resolving the schema with an empty section is exactly what the settings
+  // provider does on first read: every field falls back to its declared default.
+  let current = AtFileSettingsSchema({} as AtFileSettings)
+  return {
+    get: () => current,
+    update: async (patch) => {
+      current = { ...current, ...patch }
+    },
+  }
+}
 
 /**
  * Register the namespace with the settings provider and return its owner scope.
  * @param ctx - the plugin context carrying the settings provider.
  * @returns the owner scope backing the runtime's live enable check.
  */
-export function registerAtFileSettings(ctx: Context): SettingsScope<AtFileSettings> {
-  return ctx.settings.register(AT_FILE_NAMESPACE, AtFileSettingsSchema, { applies: 'live' })
+export function registerAtFileSettings(ctx: Context): AtFileSettingsScope {
+  const registrar = ctx.settings as unknown as NamespaceRegistrar
+  if (typeof registrar.register !== 'function') {
+    console.warn(`[dsh-atlas] this profile's settings service has no namespace API; "${AT_FILE_NAMESPACE}" runs on defaults`)
+    return defaultScope()
+  }
+  return registrar.register<AtFileSettings>(AT_FILE_NAMESPACE, AtFileSettingsSchema, { applies: 'live' })
 }

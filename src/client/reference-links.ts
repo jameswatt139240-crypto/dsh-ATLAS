@@ -32,6 +32,19 @@ export type ReferenceLink =
 const INERT_HANDLES: readonly string[] = ['plugin:']
 
 /**
+ * Is this mention body spelled with a handle that names a label rather than a
+ * resource? Callers that read a raw token (the chip decoder, the draft's own
+ * path resolver) must skip these: the scope inside a scoped plugin mention is
+ * part of the module name, and reading it as a path invents a file that no
+ * workspace holds (m05904).
+ * @param raw - the mention body, without its leading `@`.
+ * @returns true when the body is one of our inert handles.
+ */
+export function isInertHandle(raw: string): boolean {
+  return INERT_HANDLES.some(handle => raw.startsWith(handle))
+}
+
+/**
  * Decode one reference chip's raw label (its `title`) into the action it offers.
  *
  * The chip's own `title` is the label the framework decorated, verbatim:
@@ -66,7 +79,7 @@ export function decodeReferenceLink(title: string | null | undefined): Reference
     label = title.slice(1)
   }
   if (label === '') return undefined
-  if (INERT_HANDLES.some(handle => label.startsWith(handle))) return undefined
+  if (isInertHandle(label)) return undefined
   if (label.startsWith('atlas:')) {
     const handle = label.slice('atlas:'.length)
     const slash = handle.indexOf('/')
@@ -192,6 +205,71 @@ export function folderAddress(path: string): string {
   const normalized = path.replace(/\\/gu, '/')
   const encoded = normalized.split('/').map(encodeSegment).join('/')
   return `${FOLDER_ADDRESS_PREFIX}${encoded}`
+}
+
+/**
+ * What a folder tab is told to select when it opens.
+ *
+ * A folder tab is opened by ADDRESS, and an address is the tab's identity — a
+ * second open of the same folder must not open a second tab — so the thing to
+ * select cannot ride the address itself (it is not part of the folder's name,
+ * and the tab's own title reads the address). It rides the open options instead:
+ * `openResource(address, { params })` lands them on `tab.navigation.params`, a
+ * value the tab re-reads on every navigation. This plugin owns the `folder`
+ * resource type, so it also owns the shape of that value: {@link selectionOf} is
+ * the single reader of the key below.
+ */
+export interface FolderSelectionParams {
+  /** The name (one path segment) of the child to select in the opened folder. */
+  readonly select?: string
+}
+
+/**
+ * The folder a path LIVES IN, plus the name to select in it.
+ *
+ * "Click a reference twice and you get its owning folder, with the reference
+ * selected" — so this answers the pair, for a file and for a folder alike (a
+ * folder's own owning folder is its parent). Purely lexical on purpose: it must
+ * answer for a path whose neighbours are unknown, and the caller is the one that
+ * knows how to turn a relative answer into an absolute path.
+ * @param path - the reference path, either separator spelling.
+ * @returns the parent directory in canonical (forward-slash) spelling (`''` = the
+ * top of a relative path, `/` for the POSIX root, `E:/` for a drive root) and the
+ * segment to select there. The spelling is normalized for the same reason
+ * {@link folderAddress} normalizes it: the answer is compared against index keys
+ * and turned into an address, and both of those speak one spelling.
+ */
+export function owningFolderOf(path: string): { readonly dir: string; readonly select: string } {
+  const trimmed = path.replace(/[/\\]+$/u, '')
+  const at = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'))
+  if (at < 0) {
+    // No separator at all: a name at the top of whatever the path is relative
+    // to — the session workspace — or a bare drive, whose owning folder is the
+    // drive root itself (and which has no name to select).
+    return /^[A-Za-z]:$/u.test(trimmed) ? { dir: `${trimmed}/`, select: '' } : { dir: '', select: trimmed }
+  }
+  // A separator at index 0 is the POSIX root: keep it, or the caller would read
+  // this as a workspace-relative parent.
+  const cut = at === 0 ? trimmed.slice(0, 1) : trimmed.slice(0, at)
+  const dir = /^[A-Za-z]:$/u.test(cut) ? `${cut}/` : cut
+  return { dir: dir.replaceAll('\\', '/'), select: trimmed.slice(at + 1) }
+}
+
+/**
+ * The child one folder tab was told to select, or undefined when it was told
+ * nothing.
+ *
+ * Reads `unknown` rather than {@link FolderSelectionParams} because the value
+ * arrives from the product's navigation state, which this plugin does not own:
+ * a stale or foreign navigation must read as "nothing to select", never as a
+ * crash or as a wrong row.
+ * @param params - `tab.navigation.params`, as delivered.
+ * @returns the segment to select, or undefined.
+ */
+export function selectionOf(params: unknown): string | undefined {
+  if (typeof params !== 'object' || params === null) return undefined
+  const select = (params as FolderSelectionParams).select
+  return typeof select === 'string' && select !== '' ? select : undefined
 }
 
 /**

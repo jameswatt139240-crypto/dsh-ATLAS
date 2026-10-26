@@ -1,6 +1,119 @@
 # Changelog
 
+## [1.0.9-port.6] - 2026-10-27
+
+### 修复
+
+- **默认粒度在客户端没有真正生效**（用户回报：设置里默认仍不是「每轮对话」）。根因是三个地方的口径不一致：
+  契约默认 `'turn'`，设置面板兜底 `'turn'`，但 `FrameCursor` / `HistoryPalette` 用的是
+  `settings.historyJumpFrames === 'turn' ? 'turn' : 'message'` —— **缺值就落到 `'message'`**。
+  宿主交给客户端的可能是**存储层**（`at-file` 里没有这个键）而不是 schema 解析后的对象，
+  于是面板显示「每轮对话」而阶梯仍按「条」走，两者当场自相矛盾。
+  现在两处都改成 `=== 'message' ? 'message' : 'turn'`：**只有显式选择「每条消息」才细走**。
+- 单测 **983 通过 / 1 跳过**，`tsc` 0 错误。
+
+## [1.0.9-port.5] - 2026-10-27
+
+### 变更
+
+- **Esc 的历史阶梯改成「轮」，与页面右侧的轮次导轨同一把尺**（用户选定的方案 A）。
+  一格 = 一个 `turn`，身份就是 turn 号，所以同一轮在结构上不可能出现两格：
+  上一版把「提问」和「回答」各算一格，11 轮的会话在面板里读作 22 格，而右侧只画 11 格。
+- **系统发起的轮次自带一格**：这种轮次没有提问节点，它的最后一个有正文的助手节点就是这一轮唯一的停点（标签 系统），
+  与宿主 `turnNavigationItem` 的 `user ?? loaded[0]` 锚点规则、`findLast` 取回答的规则一致。
+- **默认粒度改为 `'turn'`**（原 `'message'`）。`'message'` 仍可在设置里选，它保留「每条提问 + 每条回答都停」的细粒度。
+- **读数条单位随粒度**：`'turn'` 显示「第 3 / 11 轮」，`'message'` 仍显示「第 3 / 22 条」。
+
+### 测试
+
+- `tests/runtime.spec.ts` 的默认设置形状断言更新为 `historyJumpFrames: 'turn'`。
+- 全套 40 文件 **983 通过 / 1 跳过**。
+
+## [1.0.9-port.4] - 2026-10-27
+
+### 修复
+
+- **系统发起的轮次走不到**：上一版只在「该 turn 的 prompt 也在格上」时才建回复格，而系统轮次没有 `user`
+  节点（没有人提问），于是那几轮在 Up/Down 里根本不存在。现在无 prompt 的 turn 用它的回答成格，
+  并标注**系统**（来源优先于类别：有提问的回复格标 回复，系统轮次的格标 系统）。
+- **流式消息的第一条被当成独立的历史消息**：一轮回答可能流出多个助手节点，第一条常是上文的重放，
+  上一版给每个节点都建了一格，面板里于是多出一条既不是用户、也不是系统发起的行。
+  现在**一个 turn 只留一格**，取最后一个有正文的 `assistant-step`；该 turn 一旦成格即认领，
+  outline 不会为同一 turn 再合成一格。
+
+### 测试
+
+- `tests/history-frames.spec.ts` 新增 4 条：回复格归属（用户提问 / 系统发起）、一轮多节点只留一格、
+  `'turn'` 粒度不含回复格。
+- 重新基线 `tests/history-cursor.spec.tsx` 三处系统轮次断言（窗口里只有回答的 turn 现在是最新停点）。
+  全套 40 文件 **983 通过 / 1 跳过**。
+
+## [1.0.9-port.3] - 2026-10-27
+
+### 新增
+
+- **把助手的回复也当作消息的一格，Up/Down 会跳到它上面**（用户口径：*"系统的轮次不会如用户的输入轮次一样随
+  up 和 down 移动到对应的位置，也就是应该把系统轮次视作消息的一个类别，也要跳转"*）。
+  `src/client/history-frames.ts` 的 `HistoryFrame.kind` 增加 `'reply'`：`'message'` 粒度下，一个有正文的
+  `assistant-step` 节点成格，读数条标 `history.replyTag`（回复 / Reply）。有三条边界写进了代码注释与
+  `docs/history-jump.md` §5.1.1：
+  1. **只在提问也在格上时才成格**（`seenTurns.has(turn)`）——回复排在提问之后，窗口里没有 prompt 的 turn
+     （只有 outline 的那部分）保留 outline 合成的格，读数条总数仍按 outline 口径，不会凭空多出回复格；
+  2. **`'turn'` 粒度不变**，一回合仍只一格（开头 prompt）；
+  3. **不复用**：回复的 `authoredByUser === false`，于是 `Ctrl+↑` 的"复用我写过的话"仍只走用户消息，
+     而漫游停在回复上按 Enter 会把这段正文写回输入框（引用/续写）。
+- `src/client/locales.ts` 增 `history.replyTag`（zh 回复 / en Reply），`FrameCursor` 的读数条与
+  `HistoryPalette` 的行标记按 kind 而非只按 `systemInitiated` 取标签。
+
+### 变更
+
+- 受影响的既有断言按新契约重排：`tests/history-cursor.spec.tsx`（漫游首停由最新用户消息变为最新回复、
+  四次 Up 才到最旧格、行高亮/滚动/`CSS.escape` 的目标 key 由 `u2` 变 `a2`）、
+  `tests/history-palette.spec.tsx`（列表由 2 行变 4 行、`data-atlas-frame-count` 由 2 变 4）。
+  全套 40 文件 979 通过 / 1 跳过（新增 4 条针对回复格边界的断言）。
+
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 的组织方式，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
+
+## [1.0.9-port.2] - 2026-10-26
+
+### 修复
+
+- **历史面板快捷键的文档/实现互相矛盾**：`src/client/history-keys.ts:157 isCommandOnly` 要求
+  「命令键且不带 Shift」，于是实现只认 `Ctrl/Cmd+H`，而 `src/client/index.ts:1442` 与
+  `docs/history-jump.md` §2 选型表写的是 `Ctrl/Cmd+Shift+H`（选它的理由正是绕开浏览器历史记录与 macOS
+  「隐藏应用」）。现在两种拼写打开同一面板（新增 `isPaletteChord`，`HistoryPalette` 复用它），`Alt` 仍被
+  排除（Windows 上 `AltGr` 即 `Ctrl+Alt`）。首轮无头实测证据：`Ctrl+Shift+H` 命中 0、`Ctrl+H` 命中 1；
+  改后两者都命中。
+
+## [1.0.9-port.1] - 2026-10-26
+
+### 移植
+
+- **基座取自 npm/GitHub 最新发行版 `1.0.9`（tag `v1.0.9`），上游源码包里的新功能以补丁形式叠加上去**：
+  源码压缩包自带的那份 `dsh-atlas` 已经无法启动（不带 `lib/`，且写的是宿主的旧设置 API），
+  所以移植只搬 `src/`、`tests/`、`docs/` 的行为与代码，构建、依赖装配、发布清单全部沿用 `1.0.9`。
+- **宿主 API 对齐 `@deepseek-ai/*@0.2.0-rc.2`**：注入工厂拿到的会话 id 是裸 `string`，进入领域函数前
+  用一处 `sid()` 收口成 `SessionId`（品牌类型）；会话跳转改为先问 `uiWorkspace.openSession`，退回旧
+  `sessions.open`，两者都没有就如实报"这一版客户端没有会话导航"。
+  `useSession` / `useSessions` 这两个标准快照钩子按消费端约定补进 `SessionStandardProps` /
+  `GlobalStandardProps` 的模块声明，运行时由 ui-session 提供，不再假装它们不存在。
+- **设置命名空间带降级**：`ctx.settings.register` 在新宿主上由 dsh-purge 的兼容层提供；没有这一层时
+  不再抛 `TypeError: ctx.settings.register is not a function` 把整个插件拽死，而是警告一句、
+  用 schema 默认值继续跑。
+
+### 新增
+
+- **会话历史跳转（History Jump）**：`Esc` 进入选择态后 `↑` / `↓` 在历史消息间走，`Enter` 把那条话
+  原样放回输入框；另有 `Ctrl + ↑ / ↓` 不进入选择态直接快速复用；`F1` 打开会话历史面板（可筛选、
+  可只显示每轮首条、系统发起的一轮单独标注）。
+  配套四个设置项：`historyJump`、`historyJumpFrames`（每条消息 / 每轮）、`historyJumpReuseMode`
+  （覆盖 / 追加草稿）、`historyJumpSmartFollow`（是否跟随手动滚动改变"当前位置"，默认关）。
+- **设置面板**：新增 `settings.section` 一节，把上面四项按"两个功能共用 / Esc 漫游 / Ctrl+↑↓ 快速复用"
+  分组呈现。
+- **文件夹选择器重做**：边输入边浏览（`atFile/browse`），不存在或越界的路径用"最长有效前缀 + 剩余部分
+  当筛选"回答；`hasChildren` 探测决定能不能展开；Windows 列盘符；工作区外的常用文件夹按
+  `sibling` / `parent` / `child` / `recent` / `family` 分组（`atFile/recentFolders`）。
+- **条目上限不再吃掉你要的那一行**：名字被 `maxFiles` 截断时，目标那行以 `pinned` 顶到第一行。
 
 ## [1.0.6] - 2026-09-27
 

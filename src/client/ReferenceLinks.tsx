@@ -30,9 +30,9 @@
  */
 import { useEffect, useRef } from 'react'
 import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import { splitLineRange } from '../tokens.ts'
+import { MENTION_PATTERN, splitLineRange } from '../tokens.ts'
 import { basenameOf } from './model.ts'
-import { decodeDraftReference, decodeReferenceLink, type ReferenceLink } from './reference-links.ts'
+import { decodeDraftReference, decodeReferenceLink, isInertHandle, type ReferenceLink } from './reference-links.ts'
 
 /** The framework-owned attribute carried by every decorated reference chip. */
 const CHIP_ATTRIBUTE = 'data-ref-chip'
@@ -80,7 +80,27 @@ export interface ReferenceLinksInjected {
    * the mention was sent — so the bridge marks that chip stale instead of
    * pretending the click opened something.
    */
-  readonly actionFor: (link: ReferenceLink) => (() => ReferenceOutcome | Promise<ReferenceOutcome>) | undefined
+  readonly actionFor: (link: ReferenceLink, again?: boolean) => (() => ReferenceOutcome | Promise<ReferenceOutcome>) | undefined
+  /**
+   * Whether this click is the SECOND one on the same reference (A.16).
+   *
+   * The plugin answers this from its own ledger rather than from the event's
+   * `detail`, because `detail` is synthesized by the operating system's
+   * double-click interval: the user's ruling (`m02489`) is that the second
+   * meaning must not depend on clicking quickly, and a ledger is the only thing
+   * that can tell "the same object again" from "another click nearby" at any
+   * speed. See {@link noteClick} for when the ledger moves on.
+   */
+  readonly repeatClick: (link: ReferenceLink) => boolean
+  /**
+   * Record that this reference has been clicked, and only after the action was
+   * actually resolved — an inert reference must not consume the sequence.
+   *
+   * Writing FLIPS the ledger rather than appending: a third click therefore means
+   * "open it" again, exactly like the first. Otherwise a user who clicked twice
+   * would be stuck in the second meaning with no way back to the first.
+   */
+  readonly noteClick: (link: ReferenceLink) => void
   /**
    * Map one composer chip's label to a workspace-relative path.
    *
@@ -178,10 +198,13 @@ export function composerChipLink(
  */
 export function draftPathForLabel(draft: string, label: string): string | undefined {
   let match: string | undefined
-  for (const token of draft.matchAll(/@([^\s@]+)/gu)) {
+  for (const token of draft.matchAll(MENTION_PATTERN)) {
     const raw = token[1] as string
     // A quoted spelling can hold whitespace, so it cannot be read as one token here.
     if (raw.startsWith('"')) continue
+    // A plugin mention names a module, and its handle is inert: the scope inside
+    // it must never be read as a file path (m05904).
+    if (isInertHandle(raw)) continue
     const path = splitLineRange(raw).path.replace(/[\\/]+$/u, '')
     if (path === '' || basenameOf(path) !== label) continue
     if (match !== undefined && match !== path) return undefined
@@ -207,14 +230,16 @@ function isPlainClick(event: MouseEvent, chip: Element): boolean {
 }
 
 /** Invisible bridge: opens the reference chips the product renders on click. */
-export function ReferenceLinks({ actionFor, resolveLabel, useInput }: ReferenceLinksProps) {
+export function ReferenceLinks({ actionFor, resolveLabel, repeatClick, noteClick, useInput }: ReferenceLinksProps) {
   const draft = useInput(state => state.draft)
   // The face is re-created on every injection and the chat re-renders on every
   // streamed token: hold it in a ref so the document listeners are installed
   // ONCE per mount instead of being torn down and re-added under the user's
   // pointer (a click landing in that window would be lost).
-  const face = useRef({ actionFor, resolveLabel, draft })
-  useEffect(() => { face.current = { actionFor, resolveLabel, draft } }, [actionFor, resolveLabel, draft])
+  const face = useRef({ actionFor, resolveLabel, repeatClick, noteClick, draft })
+  useEffect(() => {
+    face.current = { actionFor, resolveLabel, repeatClick, noteClick, draft }
+  }, [actionFor, resolveLabel, repeatClick, noteClick, draft])
   /**
    * Place one composer chip's label, index first and draft second.
    * @param label - the chip's visible label.
@@ -262,7 +287,9 @@ export function ReferenceLinks({ actionFor, resolveLabel, useInput }: ReferenceL
       for (const host of root.querySelectorAll(`[${COMPOSER_CHIP_ATTRIBUTE}]`)) markComposerChip(host)
     }
     /**
-     * Open the reference one click landed on.
+     * Open the reference one click landed on — or, when the plugin's ledger says
+     * this is the second click on it, whatever the face answers for a repeat
+     * (A.16: the object's owning folder, with the object selected there).
      *
      * The affordance is published on the element whose styling decides the look —
      * the chip itself for a sent chip, the chip BODY for a composer chip, whose
@@ -274,9 +301,21 @@ export function ReferenceLinks({ actionFor, resolveLabel, useInput }: ReferenceL
      * @param mark - the element carrying the link affordance.
      */
     const open = (chip: Element, link: ReferenceLink | undefined, event: MouseEvent, mark: Element): void => {
-      if (link === undefined || !isPlainClick(event, chip)) return
-      const action = face.current.actionFor(link)
+      if (link === undefined) return
+      // A second click on the SAME object is judged by the ledger ALONE (A.16).
+      // The plain-click rule below exists to protect a text-selection gesture —
+      // and releasing the mouse twice over the same chip is exactly how one
+      // drag-selects a word — so asking it here would veto the very click the
+      // user asked for, and would make the second meaning depend on clicking
+      // fast (`m02489`).
+      const again = face.current.repeatClick(link)
+      if (!again && !isPlainClick(event, chip)) return
+      const action = face.current.actionFor(link, again)
       if (action === undefined) return
+      // Recorded only once an action really exists: an inert reference must not
+      // consume the sequence, or the next click would be its "second" one while
+      // the user never saw a first.
+      face.current.noteClick(link)
       event.preventDefault()
       event.stopPropagation()
       void Promise.resolve(action()).then((outcome) => {

@@ -10,14 +10,14 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { indexWorkspace, readDirectory } from './files.ts'
+import { hasSubdirectory, indexWorkspace, pinEntry, readDirectory } from './files.ts'
 import { inspectReferences } from './reference.ts'
 import { NO_EXTERNAL_DISCOVERY, allowsExternal, externalPath, isAbsoluteReference, isUnder, type ExternalAccess } from './external.ts'
 import { listSubdirectories } from './files.ts'
 import { workspacePathKey } from './defaults.ts'
 import { stat } from 'node:fs/promises'
-import { dirname, resolve } from 'node:path'
-import type { DirectoryListing, ExternalAccessScope } from './contract.ts'
+import { dirname, join, resolve } from 'node:path'
+import type { BrowseEntry, BrowseListing, DirectoryEntry, DirectoryListing, ExternalAccessScope } from './contract.ts'
 import type {
   AtFileSettings,
   AtFileSettingsUpdate,
@@ -33,6 +33,7 @@ import { effectiveIgnoreFiles } from './defaults.ts'
 import { readDshVersion } from './runtime-info.ts'
 import { AtlasRegistry, type AtlasRegistration, type AtlasRuntimeInfo } from './atlas.ts'
 import { GIT_RESOLVE_PROVIDER, readGitChanges } from './git.ts'
+import { rankRecentFolders, readWorkspaces, type RecentFolder } from './recent-folders.ts'
 
 /** At-file workspace service: search the cwd index for the browser picker. */
 export class AtFileRuntime extends TypertRemoteService {
@@ -184,7 +185,10 @@ export class AtFileRuntime extends TypertRemoteService {
    * One bounded, one-level listing of one directory, for the folder browser and
    * the folder tab.
    *
-   * `''` means the session's workspace root, which is where a browser starts. A
+   * `''` means the layer the chooser opens at, which `browseRoot` picks so that
+   * this session can actually browse it: the top of the file system when the
+   * session may reach it, and the workspace itself when it may not — a browser
+   * that opens where it is refused shows no options at all. A
    * workspace path is always allowed; an out-of-workspace one goes through the
    * SAME gate as a reference (`allowsExternal`), so browsing can never see a path
    * the session may not reference — and the refusal comes back as a reason rather
@@ -192,18 +196,22 @@ export class AtFileRuntime extends TypertRemoteService {
    * the browser has to say in its own words instead of an exception.
    * @param agent - the live agent; its session header owns the workspace cwd.
    * @param path - absolute path, workspace-relative path, or `''` for the root.
+   * @param include - ONE child name to guarantee in the page (`''` = no preference);
+   * the folder tab passes the object it must select, because the entry cap can cut
+   * a page that does not contain it (see {@link pinEntry}).
    * @param signal - caller lifetime.
    * @returns the listing, or the reason it could not be produced.
    */
   @Remote
-  async list(agent: Agent, path: string, signal: AbortSignal): Promise<DirectoryListing> {
+  async list(agent: Agent, path: string, include: string, signal: AbortSignal): Promise<DirectoryListing> {
     const settings = this.readSettings()
     if (!settings.enabled) throw new Error('at-file is disabled in Settings')
     const cwd = agent.session.header.cwd
     if (cwd === undefined) throw new Error('at-file: the session has no workspace directory')
-    const absolute = isAbsoluteReference(path) ? path : resolve(cwd, path === '' ? '.' : path)
+    const access = this.externalAccessFor(agent)
+    const absolute = isAbsoluteReference(path) ? path : resolve(cwd, path === '' ? browseRoot(cwd, access) : path)
     const canonical = externalPath(absolute)
-    if (!isUnder(cwd, absolute) && !allowsExternal(this.externalAccessFor(agent), absolute)) {
+    if (!isUnder(cwd, absolute) && !allowsExternal(access, absolute)) {
       return { path: canonical, entries: [], error: 'outside' }
     }
     signal.throwIfAborted()
@@ -211,7 +219,12 @@ export class AtFileRuntime extends TypertRemoteService {
     signal.throwIfAborted()
     if (info === undefined) return { path: canonical, entries: [], error: 'missing' }
     if (!info.isDirectory()) return { path: canonical, entries: [], error: 'notDirectory' }
-    const contents = await readDirectory(absolute, DIRECTORY_ENTRY_LIMIT, signal)
+    const contents = await pinEntry(
+      absolute,
+      await readDirectory(absolute, DIRECTORY_ENTRY_LIMIT, signal),
+      include,
+      signal,
+    )
     const root = DRIVE_ROOT.test(canonical) || canonical === '/'
     const drives = root
       ? (await Promise.all(DRIVE_LETTERS.map(letter => driveRoot(letter, signal))))
@@ -224,7 +237,226 @@ export class AtFileRuntime extends TypertRemoteService {
       ...(contents.truncated ? { truncated: true as const } : {}),
     }
   }
+
+  /**
+   * One listing for the folder chooser, which browses while the user types.
+   *
+   * Where {@link list} answers "what is in this directory", this answers "what is
+   * in the nearest directory that can be shown": a path that does not exist — a
+   * half-typed folder name is the NORMAL case while the editor is typed into — is
+   * answered with its longest valid directory prefix, and `requested` carries the
+   * asked-for path (canonical spelling, so it always starts with `path`) so the
+   * chooser filters that prefix's children by the remaining segment instead of
+   * showing an error for every keystroke. The same walk-up covers a path that names
+   * a file: the file's folder is listed, and the name becomes the filter.
+   *
+   * Every row also says whether it opens (`hasChildren`), which is what lets a row
+   * be a group the user expands in place instead of a leap of faith. The probes run
+   * in parallel under a deadline; a row left without the flag is a row the chooser
+   * may still probe, whereas a WRONG flag would hide a folder the user asked to
+   * see.
+   * @param agent - the live agent; its session header owns the workspace cwd.
+   * @param path - absolute path, typed text, or `''` for the default layer.
+   * @param signal - caller lifetime.
+   * @returns the listing, or the reason it could not be produced.
+   */
+  @Remote
+  async browse(agent: Agent, path: string, signal: AbortSignal): Promise<BrowseListing> {
+    const settings = this.readSettings()
+    if (!settings.enabled) throw new Error('at-file is disabled in Settings')
+    const cwd = agent.session.header.cwd
+    if (cwd === undefined) throw new Error('at-file: the session has no workspace directory')
+    const access = this.externalAccessFor(agent)
+    const asked = path.trim()
+    const wanted = isAbsoluteReference(asked)
+      ? asked
+      : resolve(cwd, asked === '' ? browseDefault(cwd, access) : asked)
+    const found = await nearestDirectory(wanted, signal)
+    if (found === undefined) return { path: externalPath(wanted), entries: [], error: 'missing' }
+    const canonical = externalPath(found.directory)
+    if (!isUnder(cwd, found.directory) && !allowsExternal(access, found.directory)) {
+      return { path: canonical, entries: [], error: 'outside' }
+    }
+    signal.throwIfAborted()
+    const contents = await readDirectory(found.directory, DIRECTORY_ENTRY_LIMIT, signal)
+    const entries = await withChildPresence(found.directory, contents.entries, signal)
+    const root = DRIVE_ROOT.test(canonical) || canonical === '/'
+    const drives = root
+      ? (await Promise.all(DRIVE_LETTERS.map(letter => driveRoot(letter, signal))))
+        .filter((drive): drive is string => drive !== undefined)
+      : undefined
+    return {
+      path: canonical,
+      ...(found.exact ? {} : { requested: externalPath(wanted) }),
+      ...(drives === undefined ? { parent: externalPath(dirname(found.directory)) } : { drives }),
+      entries,
+      ...(contents.truncated ? { truncated: true as const } : {}),
+    }
+  }
+
+  /**
+   * Folders to OFFER the folder chooser before it browses anywhere.
+   *
+   * The chooser's hard question is not how to browse but where the folder is, and
+   * the most likely answers are already recorded: the workspaces this machine has
+   * opened (`~/.dsh/storages/workspace.json`), ranked so that the current
+   * workspace's siblings come first. Reading that ledger is a table lookup, where
+   * searching for the same folder means walking file systems (measured: a bounded
+   * whole-drive walk cost 36 s at depth 3 and did not finish unbounded), so the
+   * candidates are the cheap form of the same answer.
+   *
+   * Not gated by `allowsExternal`: these are folders the user has ALREADY opened
+   * as a workspace on this machine, so offering them reveals nothing the ledger
+   * did not already hold, and the chooser re-checks every path it actually
+   * browses or adopts through the normal reference gate.
+   * @param agent - the live agent; its session header owns the workspace cwd.
+   * @param signal - caller lifetime.
+   * @returns the ranked candidates (possibly empty; never an error).
+   */
+  @Remote
+  async recentFolders(agent: Agent, signal: AbortSignal): Promise<readonly RecentFolder[]> {
+    const settings = this.readSettings()
+    if (!settings.enabled) throw new Error('at-file is disabled in Settings')
+    const cwd = agent.session.header.cwd ?? ''
+    return rankRecentFolders(await readWorkspaces(signal), cwd)
+  }
 }
+
+/**
+ * The layer the folder chooser opens at when it has not been told where to look.
+ *
+ * A browser that opens SOMEWHERE has to pick a somewhere, and the two platforms
+ * answer that differently because their file systems are shaped differently. On
+ * Windows the natural entry is the drive list, which the listing itself produces:
+ * any drive root reports `drives` in place of `parent`. POSIX has no drive list,
+ * so the equivalent entry is the single filesystem root `/`.
+ *
+ * Resolving the empty path against the workspace — what `resolve(cwd, '.')` does —
+ * quietly makes the workspace the default layer on BOTH platforms. On Windows that
+ * is invisible, because the chooser is opened at a drive root and the workspace
+ * answer is never the one shown; on POSIX it was the defect: the dialog opened on
+ * the user's own project with no way up to `/`, which is indistinguishable from
+ * "the options are missing".
+ * The top is only an entry when the session may BROWSE it. `/` is outside every
+ * workspace, so a session without external discovery answers the listing with
+ * `error: 'outside'` — measured in a browser on Linux: the dialog opened at `/`,
+ * showed the refusal notice and the shortcut list, and not one directory, which is
+ * the very symptom this function exists to remove. So ask the same gate the
+ * listing asks and fall back to the workspace when it refuses: `danger-full-access`
+ * keeps the `/` it has today, and a narrow session opens on the only level it can
+ * walk instead of on a refusal.
+ * @param cwd - the session's workspace directory.
+ * @param access - what this session may reach beyond the workspace.
+ * @returns the absolute path the empty request should resolve to.
+ */
+function browseRoot(cwd: string, access: ExternalAccess): string {
+  const root = DRIVE_ROOT.test(externalPath(cwd)) || cwd.startsWith('/') ? '/' : '.'
+  if (root === '.') return root
+  const candidate = resolve(cwd, root)
+  return isUnder(cwd, candidate) || allowsExternal(access, candidate) ? root : '.'
+}
+
+/**
+ * The layer the chooser opens at, which is the folder the WORKSPACE lives in.
+ *
+ * The chooser's own question is "which folder do you want", and the likeliest
+ * answer by far is one of the folders next to the workspace — the sibling
+ * projects, the drive it sits on. Opening ON the workspace hides exactly that
+ * layer: the user sees their own project's contents and has to walk up by hand
+ * before the folder they came for is even visible. So start one level up, and ask
+ * the same gate the listing asks, because a narrow session is refused there and a
+ * dialog that opens on a refusal shows nothing; walking further up is the fallback
+ * for an access scope whose configured root sits above the workspace, and the
+ * workspace itself is the floor when nothing above it may be reached.
+ * @param cwd - the session's workspace directory.
+ * @param access - what this session may reach beyond the workspace.
+ * @returns the absolute path the empty request should resolve to.
+ */
+function browseDefault(cwd: string, access: ExternalAccess): string {
+  let candidate = dirname(resolve(cwd))
+  for (;;) {
+    if (allowsExternal(access, candidate)) return candidate
+    const above = dirname(candidate)
+    if (above === candidate) return '.'
+    candidate = above
+  }
+}
+
+/**
+ * The nearest directory at or above `path` that exists, and whether it IS `path`.
+ *
+ * A typed path is a promise the user has not finished making: the useful answer to
+ * `/mnt/EShare/Pro` is the children of `/mnt/EShare` filtered by `Pro`, not an
+ * error. A file name is the same shape of answer, which is why "exists but is not a
+ * directory" walks up exactly like "does not exist".
+ * @param path - absolute path to locate.
+ * @param signal - caller lifetime.
+ * @returns the directory to list and whether the request named it exactly.
+ */
+async function nearestDirectory(
+  path: string,
+  signal: AbortSignal,
+): Promise<{ readonly directory: string; readonly exact: boolean } | undefined> {
+  let candidate = path
+  let exact = true
+  for (;;) {
+    signal.throwIfAborted()
+    const info = await stat(candidate).catch(() => undefined)
+    if (info?.isDirectory() === true) return { directory: candidate, exact }
+    const above = dirname(candidate)
+    if (above === candidate) return undefined
+    candidate = above
+    exact = false
+  }
+}
+
+/**
+ * Attach "does this row open" to every directory row, in parallel and under a cap.
+ *
+ * The answer is what makes a row expandable instead of merely enterable, so it is
+ * worth one `opendir` per folder — but not an unbounded number of them: the budget
+ * ends the sweep and the untouched rows simply carry no flag. Hidden children
+ * count, because the flag answers "is there anything below", while which of those
+ * rows are DRAWN is the chooser's own hidden-files setting.
+ * @param directory - the directory the entries came from.
+ * @param entries - its direct children.
+ * @param signal - caller lifetime.
+ * @returns the same rows, directories carrying `hasChildren` when probed in time.
+ */
+async function withChildPresence(
+  directory: string,
+  entries: readonly DirectoryEntry[],
+  signal: AbortSignal,
+): Promise<readonly BrowseEntry[]> {
+  const out: BrowseEntry[] = entries.map(entry => ({ ...entry }))
+  const deadline = Date.now() + CHILD_PROBE_BUDGET_MS
+  let next = 0
+  const worker = async (): Promise<void> => {
+    for (;;) {
+      const index = next
+      next += 1
+      const entry = entries[index]
+      if (entry === undefined || signal.aborted || Date.now() > deadline) return
+      if (entry.kind !== 'dir') continue
+      try {
+        out[index] = { ...entry, hasChildren: await hasSubdirectory(join(directory, entry.name), {}, signal) }
+      } catch {
+        // A refused or timed-out probe leaves the flag off; the chooser covers that.
+      }
+    }
+  }
+  await Promise.all(Array.from(
+    { length: Math.min(CHILD_PROBE_CONCURRENCY, entries.length) },
+    worker,
+  ))
+  return out
+}
+
+/** How many child probes one listing runs at once. */
+const CHILD_PROBE_CONCURRENCY = 8
+
+/** How long the child probes of one listing may take before flags are dropped. */
+const CHILD_PROBE_BUDGET_MS = 600
 
 /** How many rows one directory listing may carry (bounded browser, bounded wire). */
 const DIRECTORY_ENTRY_LIMIT = 200

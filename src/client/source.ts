@@ -23,6 +23,19 @@ import { decodeDraftReference, type ReferenceLink } from './reference-links.ts'
 import { isCancellation } from '../abort.ts'
 import { PASTED_MENTION_MARKER } from '../paste.ts'
 
+/**
+ * Message text of an unknown thrown value, for a row the user reads.
+ *
+ * The same job as `messageOf` in `src/files.ts`, repeated here because that module
+ * imports `node:fs` and therefore cannot be pulled into the browser bundle. The
+ * text goes into a notice row, so it is shown verbatim rather than classified: a
+ * thrown value's own message is the most specific explanation available.
+ */
+function messageOf(error: unknown): string {
+  /* v8 ignore next -- the non-Error arm needs a non-Error rejection; every fetch here rejects with an Error, and the String arm only satisfies the unknown narrowing. */
+  return error instanceof Error ? error.message : String(error)
+}
+
 declare module '@deepseek-ai/dsh-client-ui-input-trigger/client' {
   interface InputTriggerCandidate {
     /** Source-owned stable value when the visible name is only a display label. */
@@ -361,6 +374,25 @@ export function backRow(t?: Translate): MentionCandidate {
 /** A non-pickable section divider row (e.g. 最近引用 / 全部匹配). */
 export function sectionHeaderRow(label: string): MentionCandidate {
   return { name: `─ ${label}`, value: '', mentionKind: 'section-header' as const }
+}
+
+/**
+ * A non-pickable row saying the workspace index could not be read.
+ *
+ * Without it a failed index and a query that genuinely matches nothing render the
+ * SAME menu: the file rows are simply absent, and the user is left to conclude the
+ * plugin is broken or that the file does not exist. Reported from Linux as "typing
+ * letters after @ shows nothing", which is exactly this collapse — the index fetch
+ * threw (a workspace on a mount the process cannot read, a session with no `cwd`)
+ * and the catch answered `[]`, which is indistinguishable from "no match".
+ *
+ * It is a reason row, not an error dialog: browsing still works, other categories
+ * still answer, and the row only says why the file rows are missing. It carries
+ * `browse-note` — the kind the browser already uses for "a fact you must read and
+ * cannot pick" — so the navigator needs no new case.
+ */
+export function indexFailureRow(reason: string): MentionCandidate {
+  return { name: `⚠ ${reason}`, value: '', mentionKind: 'browse-note' as const }
 }
 
 /** Relative-time buckets, mirroring the sidebar workspace rows. */
@@ -1942,6 +1974,10 @@ export function createMentionSource(deps: MentionSourceDeps): MentionSource {
         warmCategory(session.sessionId, 'skill')
       }
       const providers = liveProviders()
+      // Set by the index fetch's rejection handler below, read when the rows are
+      // assembled. Scoped per call so a stale failure never leaks into a later
+      // query that succeeded.
+      let indexFailure: string | undefined
       // A PATH in the draft is a folder to walk, not a query to match: `@E:/…` and
       // `@folder:E:/…` both open the browser on that directory (a drive letter
       // alone means its root). This is also where the browser's own picks land,
@@ -1974,7 +2010,16 @@ export function createMentionSource(deps: MentionSourceDeps): MentionSource {
         // the pending ad covers that wait, and the caller's signal cancels each
         // waiting supersede.
         const [files, skills, chatPage, plugins] = await Promise.all([
-          fetchIndex(session.sessionId, signal).catch(() => [] as readonly FileEntry[]),
+          // The index is the one fetch whose failure the user MUST see: it is the
+          // only source of file rows, so swallowing it renders "no files match"
+          // for a workspace that was never read. The reason is captured for the
+          // notice row below; the other three keep degrading silently because a
+          // missing skill/chat/plugin row is self-evident (the category band still
+          // lists them) whereas a missing FILE row is not.
+          fetchIndex(session.sessionId, signal).catch((error: unknown) => {
+            indexFailure = messageOf(error)
+            return [] as readonly FileEntry[]
+          }),
           fetchSkills(session.sessionId, signal).catch(() => [] as readonly SkillCandidate[]),
           fetchChats(session.sessionId, '', signal).catch(() => [] as readonly ChatCandidate[]),
           fetchPlugins(signal).catch(() => [] as readonly PluginCandidate[]),
@@ -2004,6 +2049,13 @@ export function createMentionSource(deps: MentionSourceDeps): MentionSource {
           ...await providerMatches(query, session.sessionId, signal),
         ].slice(0, MAX_CANDIDATES - CATEGORIES.length - providers.length - usage.length - (usage.length > 0 ? 1 : 0))
         const rows: MentionCandidate[] = []
+        // The failure notice goes FIRST, above everything: when the index could not
+        // be read, "no files match" is a lie about the workspace, and it is the
+        // likely explanation for an otherwise empty menu. Other categories may
+        // still have answered, so it is a notice, not a replacement.
+        if (indexFailure !== undefined) {
+          rows.push(indexFailureRow(indexFailure))
+        }
         if (usage.length > 0) {
           rows.push(sectionHeaderRow(t?.('section.usage') ?? '最常用'), ...usage)
         }
@@ -2023,6 +2075,9 @@ export function createMentionSource(deps: MentionSourceDeps): MentionSource {
       const sub = query.slice(category.prefix.length)
       let rows: readonly MentionCandidate[]
       if (category.key === 'file' || category.key === 'folder') {
+        // Deliberately loud: a category the user chose BY NAME must not answer with
+        // an empty list when the index itself failed, because "this workspace has no
+        // files" is then a lie. `tests/apply.client.spec.tsx` pins the rejection.
         const files = await fetchIndex(session.sessionId, signal)
         if (signal.aborted) return []
         if (category.key === 'folder') {

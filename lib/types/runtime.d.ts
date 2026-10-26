@@ -11,10 +11,11 @@ import type { Context } from '@deepseek-ai/cordis';
 import { TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol';
 import type { Agent } from '@deepseek-ai/dsh-agent';
 import { type ExternalAccess } from './external.ts';
-import type { DirectoryListing, ExternalAccessScope } from './contract.ts';
+import type { BrowseListing, DirectoryListing, ExternalAccessScope } from './contract.ts';
 import type { AtFileSettings, AtFileSettingsUpdate, ChatCandidate, FileEntry, GitChange, PluginCandidate, ReferenceInfo, SkillCandidate } from './contract.ts';
 import type { ResolvedConfig } from './types.ts';
 import { type AtlasRegistration, type AtlasRuntimeInfo } from './atlas.ts';
+import { type RecentFolder } from './recent-folders.ts';
 /** At-file workspace service: search the cwd index for the browser picker. */
 export declare class AtFileRuntime extends TypertRemoteService {
     private readonly config;
@@ -80,7 +81,10 @@ export declare class AtFileRuntime extends TypertRemoteService {
      * One bounded, one-level listing of one directory, for the folder browser and
      * the folder tab.
      *
-     * `''` means the session's workspace root, which is where a browser starts. A
+     * `''` means the layer the chooser opens at, which `browseRoot` picks so that
+     * this session can actually browse it: the top of the file system when the
+     * session may reach it, and the workspace itself when it may not — a browser
+     * that opens where it is refused shows no options at all. A
      * workspace path is always allowed; an out-of-workspace one goes through the
      * SAME gate as a reference (`allowsExternal`), so browsing can never see a path
      * the session may not reference — and the refusal comes back as a reason rather
@@ -88,10 +92,56 @@ export declare class AtFileRuntime extends TypertRemoteService {
      * the browser has to say in its own words instead of an exception.
      * @param agent - the live agent; its session header owns the workspace cwd.
      * @param path - absolute path, workspace-relative path, or `''` for the root.
+     * @param include - ONE child name to guarantee in the page (`''` = no preference);
+     * the folder tab passes the object it must select, because the entry cap can cut
+     * a page that does not contain it (see {@link pinEntry}).
      * @param signal - caller lifetime.
      * @returns the listing, or the reason it could not be produced.
      */
-    list(agent: Agent, path: string, signal: AbortSignal): Promise<DirectoryListing>;
+    list(agent: Agent, path: string, include: string, signal: AbortSignal): Promise<DirectoryListing>;
+    /**
+     * One listing for the folder chooser, which browses while the user types.
+     *
+     * Where {@link list} answers "what is in this directory", this answers "what is
+     * in the nearest directory that can be shown": a path that does not exist — a
+     * half-typed folder name is the NORMAL case while the editor is typed into — is
+     * answered with its longest valid directory prefix, and `requested` carries the
+     * asked-for path (canonical spelling, so it always starts with `path`) so the
+     * chooser filters that prefix's children by the remaining segment instead of
+     * showing an error for every keystroke. The same walk-up covers a path that names
+     * a file: the file's folder is listed, and the name becomes the filter.
+     *
+     * Every row also says whether it opens (`hasChildren`), which is what lets a row
+     * be a group the user expands in place instead of a leap of faith. The probes run
+     * in parallel under a deadline; a row left without the flag is a row the chooser
+     * may still probe, whereas a WRONG flag would hide a folder the user asked to
+     * see.
+     * @param agent - the live agent; its session header owns the workspace cwd.
+     * @param path - absolute path, typed text, or `''` for the default layer.
+     * @param signal - caller lifetime.
+     * @returns the listing, or the reason it could not be produced.
+     */
+    browse(agent: Agent, path: string, signal: AbortSignal): Promise<BrowseListing>;
+    /**
+     * Folders to OFFER the folder chooser before it browses anywhere.
+     *
+     * The chooser's hard question is not how to browse but where the folder is, and
+     * the most likely answers are already recorded: the workspaces this machine has
+     * opened (`~/.dsh/storages/workspace.json`), ranked so that the current
+     * workspace's siblings come first. Reading that ledger is a table lookup, where
+     * searching for the same folder means walking file systems (measured: a bounded
+     * whole-drive walk cost 36 s at depth 3 and did not finish unbounded), so the
+     * candidates are the cheap form of the same answer.
+     *
+     * Not gated by `allowsExternal`: these are folders the user has ALREADY opened
+     * as a workspace on this machine, so offering them reveals nothing the ledger
+     * did not already hold, and the chooser re-checks every path it actually
+     * browses or adopts through the normal reference gate.
+     * @param agent - the live agent; its session header owns the workspace cwd.
+     * @param signal - caller lifetime.
+     * @returns the ranked candidates (possibly empty; never an error).
+     */
+    recentFolders(agent: Agent, signal: AbortSignal): Promise<readonly RecentFolder[]>;
 }
 /** Host-side capability faces the atMention service forwards to. */
 export interface MentionRuntimeDeps {

@@ -6,7 +6,9 @@ import { type ExternalAccess } from './external.ts';
  *
  * Paths that escape the workspace, are external without access, or do not exist
  * come back with `exists: false` rather than being dropped, so the dock can
- * attribute the failure to the exact token the user typed.
+ * attribute the failure to the exact token the user typed. An absolute path that
+ * lands inside the workspace is a workspace path, not an external one, so it is
+ * inspected exactly like its relative spelling.
  * @param cwd - the session workspace root (absolute).
  * @param targets - paths as typed, already stripped of line ranges.
  * @param signal - caller lifetime.
