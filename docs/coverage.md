@@ -11,9 +11,9 @@ Measured, not estimated. Every number here comes from one command:
 | Metric | Value |
 | --- | --- |
 | Test files | 42 passed |
-| Tests | **1079 passed, 1 skipped** |
-| Statements | **96.46%** (5293 / 5487) |
-| Branches | **91.99%** (3573 / 3884) |
+| Tests | **1081 passed, 1 skipped** |
+| Statements | **96.50%** (5295 / 5487) |
+| Branches | **92.04%** (3575 / 3884) |
 | Lines | **98.10%** (4358 / 4442) |
 | Functions | see `coverage/coverage-final.json` |
 | Typecheck | `tsc --noEmit` → 0 errors |
@@ -41,11 +41,12 @@ a non-`Error` abort reason), which is why they are not turned into behaviour tes
 | tools / expansion failures / directory readers | 95.73% | 90.91% | 1059 |
 | draft caret + pointer edges | 96.04% | 91.37% | 1065 |
 | cache abandonment + pick texts | 96.30% | 91.60% | 1075 |
-| folder browser terminal states | **96.46%** | **91.99%** | **1079** |
+| folder browser terminal states | 96.46% | 91.99% | 1079 |
+| cancellation after every category fetch | **96.50%** | **92.04%** | **1081** |
 
 ## What is still uncovered
 
-171 lines across 24 files — 52% of them in two files (`src/client/index.ts`,
+169 lines across 24 files — 52% of them in two files (`src/client/index.ts`,
 `src/client/source.ts`). They are listed line by line below so that each one can be judged instead
 of trusted.
 
@@ -63,7 +64,7 @@ caller sharing an in-flight promise, retired-client fallbacks, the folder picker
 None of them is exempt — each has a test shape that would cover it, and this table is the queue.
 
 | `src/client/index.ts` | 55 | 425, 426, 427, 432, 500, 501, 530, 544, 622, 636, 649, 662, 663, 680, 681, 685, 716, 717, 718, 719, 720, 750, 751, 753, 755, 756, 757, 758, 759, 760, 761, 762, 763, 764, 765, 787, 953, 1119, 1194, 1252, 1260, 1261, 1279, 1306, 1310, 1311, 1314, 1329, 1330, 1347, 1348, 1375, 1376, 1377, 1468 |
-| `src/client/source.ts` | 34 | 475, 801, 860, 1141, 1145, 1147, 1148, 1234, 1563, 1668, 1706, 1755, 1766, 1767, 1768, 1775, 1795, 1800, 1810, 1811, 1812, 1837, 1843, 1874, 1876, 1908, 1936, 2027, 2090, 2091, 2099, 2104, 2116, 2215 |
+| `src/client/source.ts` | 32 | 475, 801, 860, 1141, 1145, 1147, 1148, 1234, 1563, 1668, 1706, 1755, 1766, 1767, 1768, 1775, 1795, 1800, 1810, 1811, 1812, 1837, 1843, 1874, 1876, 1908, 1936, 2027, 2090, 2091, 2099, 2215 |
 | `src/client/FolderPicker.tsx` | 18 | 283, 320, 342, 359, 383, 390, 396, 550, 564, 582, 603, 666, 669, 689, 770, 773, 837, 840 |
 | `src/index.ts` | 10 | 193, 196, 319, 324, 342, 361, 366, 371, 374, 389 |
 | `src/runtime.ts` | 5 | 57, 173, 275, 354, 407 |
