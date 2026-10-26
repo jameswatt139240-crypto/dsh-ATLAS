@@ -1593,6 +1593,40 @@ describe('mixed sections and tags', () => {
     expect(rows.slice(-CATEGORIES.length).every(row => row.mentionKind === 'category')).toBe(true)
   })
 
+  it('rebuilds a usage row for every category, and skips what no longer exists', async () => {
+    const h = harness({
+      usage: () => [
+        { key: 'file:src/client/view.ts', count: 40, at: 1 },
+        { key: 'skill:blender-modeling', count: 30, at: 2 },
+        { key: 'chat:sess-a', count: 20, at: 3 },
+        { key: 'plugin:dsh-atlas', count: 10, at: 4 },
+        // A key with no category separator, and one whose item is gone from the
+        // catalogs: neither earns a row.
+        { key: 'nocolon', count: 9, at: 5 },
+        { key: 'skill:vanished', count: 8, at: 6 },
+        { key: 'file:gone.ts', count: 7, at: 7 },
+      ],
+    })
+    const source = await prime(h)
+    /** The usage section of one query, header excluded. */
+    const recap = async (query: string): Promise<readonly { mentionKind?: string; value?: string }[]> => {
+      const rows = await source.candidates(session('s1'), { query, position: 'leading', signal: new AbortController().signal })
+      const header = rows.findIndex(row => row.name === '─ 最常用')
+      const rest = rows.findIndex(row => row.name === '─ 全部匹配')
+      return header < 0 ? [] : rows.slice(header + 1, rest < 0 ? undefined : rest)
+    }
+    // One query per category: the recap is filtered by the same needle, so each of
+    // these only leaves its own row standing.
+    expect((await recap('view'))[0]).toMatchObject({ mentionKind: 'file', value: 'src/client/view.ts' })
+    expect((await recap('blender'))[0]).toMatchObject({ mentionKind: 'skill', value: 'blender-modeling' })
+    expect((await recap('sess'))[0]).toMatchObject({ mentionKind: 'chat', value: 'sess-a' })
+    expect((await recap('atlas'))[0]).toMatchObject({ mentionKind: 'plugin', value: 'dsh-atlas' })
+    // A malformed key and a vanished item are skipped rather than rendered empty.
+    expect(await recap('nocolon')).toEqual([])
+    expect(await recap('vanished')).toEqual([])
+    expect(await recap('gone')).toEqual([])
+  })
+
   it('ranks the most-used rows across categories by pick count', async () => {
     const h = harness({
       usage: () => [
