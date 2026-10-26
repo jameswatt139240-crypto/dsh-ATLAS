@@ -85,6 +85,14 @@ const LEVELS: Record<string, PickerListing> = {
     parent: 'E:/',
     entries: [entry('Inside', 'E:/Probe/Inside', false, false)],
   },
+  '/home/ubuntu': {
+    path: '/home/ubuntu',
+    home: '',
+    crumbs: crumbs('/home/ubuntu'),
+    truncated: false,
+    parent: '/home',
+    entries: [],
+  },
   'E:/Empty': {
     path: 'E:/Empty',
     home: '',
@@ -856,6 +864,70 @@ describe('the note under a filtered list', () => {
     await settle()
     expect(dialog(full.container).textContent).toContain(t('picker.noMatch'))
   })
+})
+
+describe('the crumbs that jump', () => {
+  it('walks to the home folder when the Host names one and offers no drives', async () => {
+    const harness = mount({
+      browse: ((path: string | undefined) => Promise.resolve({
+        ...levelOf(path ?? 'E:/'),
+        home: '/home/ubuntu',
+        drives: undefined,
+      })) as MountOptions['browse'],
+    })
+    await settle()
+    const home = buttonWith(harness.container, t('picker.home'))
+    expect(home).not.toBeNull()
+    click(home)
+    await settle()
+    const levels = [...harness.browse.mock.calls, ...harness.list.mock.calls].map(call => call[0])
+    expect(levels).toContain('/home/ubuntu')
+  })
+
+  it('offers the drive list only where the Host names drives, and it re-walks that level', async () => {
+    const harness = mount({
+      browse: ((path: string | undefined) => Promise.resolve({
+        ...levelOf(path ?? 'E:/'),
+        home: '',
+        drives: ['C:/', 'E:/'],
+      })) as MountOptions['browse'],
+    })
+    await settle()
+    const drives = buttonWith(harness.container, t('picker.drives'))
+    expect(drives).not.toBeNull()
+    const before = harness.browse.mock.calls.length
+    click(drives)
+    await settle()
+    // The crumb re-walks the level it is on (a POSIX top level answers `drives: []`,
+    // and this crumb used to appear there labelled with letters that did nothing).
+    expect(harness.browse.mock.calls.length).toBeGreaterThan(before)
+  })
+})
+
+describe('the keyboard stays inside the dialog', () => {
+  it('cycles focus with Tab and Shift+Tab instead of leaving the modal', async () => {
+    const harness = mount()
+    await settle()
+    const frame = dialog(harness.container)
+    const focusable = [...frame.querySelectorAll<HTMLElement>('input, button, [tabindex]:not([tabindex="-1"])')]
+      .filter(element => !element.hasAttribute('disabled'))
+    expect(focusable.length).toBeGreaterThan(1)
+    // Land on the last one, then Tab must wrap to the first rather than escaping.
+    const last = focusable[focusable.length - 1] as HTMLElement
+    flushed(() => { last.focus() })
+    press(harness.container, 'Tab')
+    const wrapped = document.activeElement as HTMLElement
+    // Focus stayed inside the modal, and moved off the last element rather than
+    // leaving the dialog for the page behind it.
+    expect(frame.contains(wrapped)).toBe(true)
+    expect(wrapped).not.toBe(last)
+    // Shift+Tab steps back to a different element, still inside the modal.
+    press(harness.container, 'Tab', { shiftKey: true })
+    const back = document.activeElement as HTMLElement
+    expect(frame.contains(back)).toBe(true)
+    expect(back).not.toBe(wrapped)
+  })
+
 })
 
 describe('creating a folder', () => {
