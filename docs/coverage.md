@@ -14,7 +14,7 @@ Measured, not estimated. Every number here comes from one command:
 | Tests | **1087 passed, 1 skipped** |
 | Statements | **96.61%** (5301 / 5487) |
 | Branches | **92.22%** (3582 / 3884) |
-| Lines | **98.17%** (4361 / 4442) |
+| Lines | **98.22%** (4363 / 4442) |
 | Functions | see `coverage/coverage-final.json` |
 | Typecheck | `tsc --noEmit` → 0 errors |
 | Publish surface | `node scripts/verify-publish-surface.mjs` → 67 files, ad-free bundle |
@@ -77,7 +77,6 @@ None of them is exempt — each has a test shape that would cover it, and this t
 | `src/client/FilesDock.tsx` | 3 | 122, 127, 152 |
 | `src/client/MenuIcons.tsx` | 3 | 78, 129, 141 |
 | `src/client/SettingsSection.tsx` | 3 | 163, 164, 186 |
-| `src/client/icons.tsx` | 3 | 170, 251, 252 |
 | `src/git.ts` | 2 | 62, 146 |
 | `src/recent-folders.ts` | 2 | 144, 171 |
 | `src/references.ts` | 2 | 172, 283 |
