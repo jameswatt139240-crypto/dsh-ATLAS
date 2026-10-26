@@ -1005,6 +1005,47 @@ describe('the gestures that write something', () => {
     expect(rowNames(harness.container)).toEqual([t('picker.group.presets'), t('picker.group.current')])
   })
 
+  it('stays quiet about a browse that finishes after the dialog is gone', async () => {
+    // The fetch effect aborts on unmount; a late answer (or a late failure) must
+    // not touch state on a component that no longer exists.
+    let fail: ((error: Error) => void) | undefined
+    const harness = mount({
+      browse: () => new Promise<PickerListing>((_resolve, reject) => { fail = reject }),
+    })
+    await settle()
+    harness.unmount()
+    fail?.(new Error('too late to matter'))
+    await settle()
+    // Nothing to assert on screen (the dialog is gone) — the point is that the
+    // rejection handler short-circuits on the aborted signal instead of setting state.
+    expect(onScreen(harness.container)).toBe(false)
+  })
+
+  it('notes a failed expansion and keeps the level usable', async () => {
+    const harness = mount({
+      list: (path) => (path === 'E:/Rust' ? Promise.reject(new Error('no permission there')) : Promise.resolve(levelOf(path))),
+    })
+    await settle()
+    flushed(() => { rowNamed(harness.container, 'Rust').click() })
+    await settle()
+    flushed(() => { press(harness.container, 'Enter', {}, 'list') })
+    await settle()
+    expect(notes(harness.container).some(note => note.includes('no permission there'))).toBe(true)
+    // The failed folder is still a row the user can try again from.
+    expect(rowNames(harness.container)).toContain('Rust')
+  })
+
+  it('does not move the cursor on a level with nothing focusable', async () => {
+    const harness = mount({ browse: () => Promise.resolve(levelOf('E:/Empty')) })
+    await settle()
+    // No folder rows: the arrows have nothing to reach, and the dialog does not throw.
+    flushed(() => { press(harness.container, 'ArrowDown', {}, 'list') })
+    flushed(() => { press(harness.container, 'End', {}, 'list') })
+    expect(onScreen(harness.container)).toBe(true)
+    // The only focusable thing left is the way up, so that is where the cursor sits.
+    expect(currentName(harness.container)).toBe(t('picker.up'))
+  })
+
   it('shows the refusal the Host reported', async () => {
     const harness = mount({ browse: () => Promise.resolve({ ...levelOf('E:/'), error: 'outside' }) })
     await settle()
