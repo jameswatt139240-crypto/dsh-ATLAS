@@ -11,11 +11,12 @@ Measured, not estimated. Every number here comes from one command:
 | Metric | Value |
 | --- | --- |
 | Test files | 43 passed |
-| Tests | **1131 passed, 1 skipped** |
+| Tests | **1132 passed, 1 skipped** |
 | Statements | **98.30%** (5394 / 5487) |
 | Branches | **93.89%** (3647 / 3884) |
 | Lines | **99.34%** (4413 / 4442) |
 | Functions | see `coverage/coverage-final.json` |
+| Uncovered | **93 statements over 17 files** (unique lines: 86) |
 | Typecheck | `tsc --noEmit` → 0 errors |
 | Publish surface | `node scripts/verify-publish-surface.mjs` → 67 files, ad-free bundle |
 
@@ -48,8 +49,8 @@ a non-`Error` abort reason), which is why they are not turned into behaviour tes
 
 ## What is still uncovered
 
-163 lines across 22 files — 53% of them in two files (`src/client/index.ts`,
-`src/client/source.ts`). They are listed line by line below so that each one can be judged instead
+93 statements across 17 files (86 unique lines) — **62% of them in two files** (`src/client/index.ts`
+23, `src/client/source.ts` 22). They are listed line by line below so that each one can be judged instead
 of trusted.
 
 ### 1. Structurally unreachable in the shipped build (2 sites)
@@ -66,24 +67,23 @@ caller sharing an in-flight promise, retired-client fallbacks, the folder picker
 
 | File | Uncovered | Lines |
 |---|---|---|
-| `src/client/index.ts` | 29 | 425, 426, 427, 432, 717, 750, 758, 760, 763, 787, 953, 1119, 1194, 1252, 1260, 1261, 1279, 1306, 1310, 1311, 1314, 1329, 1330, 1347, 1348, 1375, 1376, 1377, 1468 |
-| `src/client/source.ts` | 23 | 860, 1141, 1147, 1148, 1234, 1563, 1668, 1706, 1755, 1766, 1767, 1768, 1775, 1811, 1837, 1843, 1874, 1908, 1936, 2027, 2091, 2099, 2215 |
+| `src/client/index.ts` | 21 | 425, 426, 427, 432, 717, 750, 758, 760, 763, 787, 953, 1119, 1194, 1252, 1260, 1261, 1279, 1375, 1376, 1377, 1468 |
+| `src/client/source.ts` | 21 | 860, 1141, 1147, 1148, 1234, 1563, 1668, 1706, 1755, 1767, 1775, 1811, 1837, 1843, 1874, 1908, 1936, 2027, 2091, 2099, 2215 |
 | `src/client/FolderPicker.tsx` | 13 | 283, 320, 342, 359, 383, 390, 396, 564, 582, 603, 666, 669, 689 |
-| `src/index.ts` | 5 | 193, 196, 361, 374, 389 |
 | `src/runtime.ts` | 5 | 57, 173, 275, 354, 407 |
-| `src/client/AdPanel.tsx` | 5 | 64, 134, 156, 157, 161 |
 | `src/client/DraftLinks.tsx` | 5 | 94, 168, 169, 170, 216 |
 | `src/client/FrameCursor.tsx` | 5 | 382, 458, 554, 576, 589 |
-| `src/client/FolderTab.tsx` | 4 | 105, 110, 136, 168 |
-| `src/client/SettingsSection.tsx` | 3 | 163, 164, 186 |
-| `src/git.ts` | 2 | 62, 146 |
-| `src/recent-folders.ts` | 2 | 144, 171 |
+| `src/index.ts` | 2 | 361, 389 |
+| `src/client/AdPanel.tsx` | 2 | 64, 134 |
+| `src/client/FolderTab.tsx` | 2 | 110, 136 |
 | `src/client/ReferenceLinks.tsx` | 2 | 286, 356 |
 | `src/client/draft-links.ts` | 2 | 121, 452 |
 | `src/contract.ts` | 1 | 34 |
+| `src/git.ts` | 1 | 62 |
+| `src/recent-folders.ts` | 1 | 171 |
+| `src/client/SettingsSection.tsx` | 1 | 186 |
 | `src/client/draft-scope.ts` | 1 | 39 |
 | `src/client/history-frames.ts` | 1 | 353 |
-| `src/client/session-link.ts` | 1 | 95 |
 
 ### 2c. Gap register — what is left, and which kind of gap it is
 
