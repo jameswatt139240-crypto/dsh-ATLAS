@@ -28,6 +28,7 @@ import {
   cleanChatLabel,
   editDistance,
   matchesFuzzy,
+  pluginScope,
   providerCategories,
   rankFilesWithFuzzy,
 } from '../src/client/source.ts'
@@ -99,6 +100,26 @@ function harness(overrides: Partial<Parameters<typeof createMentionSource>[0]> =
     tick: (ms: number) => { clock += ms },
   }
 }
+
+describe('pure helpers of the source', () => {
+  it('answers an empty needle for everything and gives up below three characters', () => {
+    expect(matchesFuzzy('', 'anything')).toBe(true)
+    // Two characters cannot be a typo candidate: only a substring can match.
+    expect(matchesFuzzy('zz', 'animation-quality-gate')).toBe(false)
+    expect(matchesFuzzy('anim', 'animation-quality-gate')).toBe(true)
+    // One edit at three characters, two at eight and above.
+    expect(matchesFuzzy('anmat', 'animat')).toBe(true)
+    expect(matchesFuzzy('qualitygate', 'animation-quality-gate')).toBe(false)
+    // A misspelt token is still a token: `qulity` is one edit from `quality`.
+    expect(matchesFuzzy('qulity', 'animation-quality-gate')).toBe(true)
+  })
+
+  it('buckets a plugin module under its npm scope, or under 其他', () => {
+    expect(pluginScope('@deepseek-ai/dsh-atlas')).toBe('@deepseek-ai')
+    expect(pluginScope('@bare')).toBe('@bare')
+    expect(pluginScope('dsh-atlas')).toBe('其他')
+  })
+})
 
 describe('category menu', () => {
   it('shows only the category rows for an empty query', async () => {
