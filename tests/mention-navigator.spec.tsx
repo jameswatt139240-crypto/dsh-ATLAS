@@ -168,6 +168,49 @@ describe('coexisting @ sources', () => {
   })
 })
 
+describe('group resolution corner cases', () => {
+  const withItems = (items: readonly unknown[], status: MenuState['groups'][number]['status'] = 'ready'): MenuState => ({
+    open: true,
+    hit: { trigger: '@', query: 'p', position: 'leading', span: { start: 0, end: 2, draftRev: 4 } },
+    generation: 1,
+    groups: [{ source: 'atlas', status, items } as MenuState['groups'][number]],
+    highlight: { source: 'atlas', index: 0 },
+  })
+
+  it('resolves a group header only for a ready list carrying a key', () => {
+    // A pending list has no rows to resolve.
+    expect(highlightedGroup(withItems([{ name: 'g', mentionKind: 'dir-group', groupKey: 'file:a' }], 'pending'))).toBeUndefined()
+    // A leaf is not a header.
+    expect(highlightedGroup(withItems([{ name: 'a.ts', mentionKind: 'file', value: 'a.ts' }]))).toBeUndefined()
+    // A header without a key cannot fold anything.
+    expect(highlightedGroup(withItems([{ name: 'g', mentionKind: 'dir-group' }]))).toBeUndefined()
+    // A row from another plugin's vocabulary is not ours.
+    expect(highlightedGroup(withItems([{ name: 'g', mentionKind: 'leaf' }]))).toBeUndefined()
+    expect(highlightedGroup(withItems([{ name: 'g', mentionKind: 'dir-group', groupKey: 'file:a' }])))
+      .toEqual({ key: 'file:a', index: 0 })
+  })
+
+  it('finds no first leaf in a pending list or a header-only list', () => {
+    expect(firstLeafIndex(withItems([{ name: 'r', mentionKind: 'section-header' }], 'pending'))).toBe(-1)
+    expect(firstLeafIndex(withItems([
+      { name: 'r', mentionKind: 'section-header' },
+      { name: 'b', mentionKind: 'back' },
+      { name: 'c', mentionKind: 'category' },
+    ]))).toBe(-1)
+    expect(firstLeafIndex(withItems([
+      { name: 'r', mentionKind: 'section-header' },
+      { name: 'a.ts', mentionKind: 'file', value: 'a.ts' },
+    ]))).toBe(1)
+  })
+
+  it('treats a row without a kind as a leaf, not a header', () => {
+    expect(isHeaderRow({})).toBe(false)
+    expect(isHeaderRow({ mentionKind: 'back' })).toBe(true)
+    expect(isHeaderRow({ mentionKind: 'section-header' })).toBe(true)
+    expect(isHeaderRow({ mentionKind: 'file' })).toBe(false)
+  })
+})
+
 describe('isPlainEnter', () => {
   it('recognizes a plain Enter only', () => {
     const plain = { key: 'Enter', keyCode: 13, defaultPrevented: false, isComposing: false, altKey: false, ctrlKey: false, metaKey: false, shiftKey: false }

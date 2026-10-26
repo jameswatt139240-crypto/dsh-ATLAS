@@ -14,7 +14,7 @@ import { NS, en, zh } from '../src/client/locales.ts'
 import { SOURCE_NAME } from '../src/client/source.ts'
 import { STYLE_ID } from '../src/client/styles.ts'
 import { DEFAULT_IGNORE_FILES } from '../src/defaults.ts'
-import type { AtFileSettings, AtFileSettingsUpdate, BrowseListing, DirectoryListing, RecentFolder, ReferenceInfo, WorkspaceIgnoreFiles } from '../src/contract.ts'
+import type { AtFileSettings, AtFileSettingsUpdate, BrowseListing, DirectoryListing, ExternalAccessScope, RecentFolder, ReferenceInfo, WorkspaceIgnoreFiles } from '../src/contract.ts'
 import type { AtlasRuntimeInfo } from '../src/atlas.ts'
 
 type RemoteResult<T> = { ok: true; value: T } | { ok: false; error: { code: string; message: string; details: object } }
@@ -28,6 +28,7 @@ interface BootOptions {
    * before the folder browser: the click then falls back to the Session summary.
    */
   atFileList?: (sessionId: SessionId, path: string, include: string, signal: AbortSignal) => Promise<RemoteResult<DirectoryListing>>
+  atFileExternal?: (sessionId: SessionId, signal: AbortSignal) => Promise<{ ok: true; value: ExternalAccessScope } | { ok: false; error: { code: string; message: string } }>
   atFileGetSettings?: () => Promise<RemoteResult<AtFileSettings>>
   atFileUpdateSettings?: (update: AtFileSettingsUpdate) => Promise<RemoteResult<AtFileSettings>>
   /** The chooser's own listing, carrying `hasChildren`; absent on an older Host. */
@@ -131,6 +132,7 @@ async function boot(options: BootOptions = {}) {
       // without a stub the plugin treats the target as unverified and opens.
       ...(options.atFileInspect === undefined ? {} : { inspect: options.atFileInspect }),
       ...(options.atFileList === undefined ? {} : { list: options.atFileList }),
+      ...(options.atFileExternal === undefined ? {} : { external: options.atFileExternal }),
       ...(options.atFileBrowse === undefined ? {} : { browse: options.atFileBrowse }),
       ...(options.atFileRecentFolders === undefined ? {} : { recentFolders: options.atFileRecentFolders }),
       getSettings,
@@ -1449,6 +1451,46 @@ describe('dsh-atlas settings verbs', () => {
       field: 'workspaceIgnoreFiles',
       value: [{ workspace: '/other', ignoreFiles: ['keep.tmp'] }],
     })
+  })
+})
+
+describe('dsh-atlas folder escape hatches', () => {
+  it('lists the external scope and reports a failed directory listing', async () => {
+    const external = vi.fn(async () => ({ ok: true as const, value: { canDiscover: true, roots: ['/ledger'], folders: ['/outside'] } }))
+    const booted = await boot({ atFileExternal: external })
+    const source = registered(booted)
+    const request = (query: string) => ({ query, position: 'leading' as const, signal: signal() })
+    // Priming the folder page asks the Host for the ledger it may offer.
+    await source.candidates(s1, request('folder:'))
+    await settle()
+    expect(external).toHaveBeenCalled()
+
+    // A failing index read is a SOFT failure for the menu: the category still
+    // opens (back row only) instead of throwing into the composer.
+    const failing = await boot({ atFileList: async () => ({ ok: false as const, error: { code: 'gone', message: 'boom', details: {} } }) })
+    const rows = await registered(failing).candidates(s1, { query: 'file:', position: 'leading', signal: signal() })
+    expect(rows.every(row => row.mentionKind === 'back')).toBe(true)
+  })
+
+  it('hands the pick to the product chooser, or opens its own dialog without one', async () => {
+    const pickDirectory = vi.fn(async () => '/picked/folder')
+    const booted = await boot({ uiWorkspace: { pickDirectory, createDirectory: async () => '' } })
+    const folderRow = { name: '选择文件夹…', value: 'folder-choose', mentionKind: 'folder-choose' }
+    const session = s1
+    // The native chooser answers: the pick inserts the folder it returned.
+    expect(registered(booted).onPick?.({ candidate: folderRow, session, action: 'accept', span: { start: 0, end: 2 } }))
+      .toBeUndefined()
+    await settle()
+    expect(pickDirectory).toHaveBeenCalled()
+    const bail = booted.sessionBail
+    expect(bail).toHaveBeenCalled()
+    const call = bail.mock.calls.at(-1) as unknown as [unknown, string, { text: string }]
+    expect(call[2].text).toBe('@/picked/folder/ ')
+
+    // No chooser at all: this plugin's own dialog opens over the same backend.
+    const bare = await boot({ uiWorkspace: { createDirectory: async () => '' } })
+    expect(registered(bare).onPick?.({ candidate: folderRow, session, action: 'accept', span: { start: 0, end: 2 } })).toBeUndefined()
+    expect(registered(bare).name).toBe(SOURCE_NAME)
   })
 })
 
