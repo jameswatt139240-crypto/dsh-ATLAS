@@ -38,6 +38,10 @@ interface BootOptions {
   sidebarTabs?: { register: (definition: unknown) => () => void }
   /** The product's workspace view: session navigation and folder creation. */
   uiWorkspace?: { openSession?: (target: SessionId) => void; createDirectory: (path: string, name: string) => Promise<string> }
+  /** The session face behind `ctx.sessions.sessionOf`: history loading and projections. */
+  sessionFace?: { loadThrough: (seq: number) => void; projections?: unknown }
+  /** How `ctx.sessions.scope` answers; undefined is a session with no client scope. */
+  withoutSessionScope?: boolean
   /** The Atlas namespace that carries the running Harness's own facts. */
   remoteAtlas?: { runtime: () => Promise<RemoteResult<AtlasRuntimeInfo>>; gitChanges: (sessionId: SessionId, signal: AbortSignal) => Promise<RemoteResult<readonly unknown[]>> }
   openPath?: () => Promise<{ ok: true } | { ok: false; error: { message: string } }>
@@ -70,10 +74,16 @@ async function boot(options: BootOptions = {}) {
   const sourceDispose = vi.fn()
   const registerSource = vi.fn(() => sourceDispose)
   const openReference = vi.fn(() => true)
-  const controller = { menu: { getSnapshot: vi.fn(), subscribe: vi.fn() }, track: vi.fn(), openReference }
+  const controller = {
+    menu: { getSnapshot: vi.fn(), subscribe: vi.fn() },
+    track: vi.fn(),
+    openReference,
+    ...(options.sessionFace ?? {}),
+  }
   const sessionOf = vi.fn(() => controller)
   const sessionScope = {}
-  const scopeSession = vi.fn(() => sessionScope)
+  const sessionBail = vi.fn(() => true)
+  const scopeSession = vi.fn(() => (options.withoutSessionScope === true ? undefined : { ...sessionScope, bail: sessionBail }))
   const mount = vi.fn(options.remoteMount ?? (async () => () => {}))
   const localeRegister = vi.fn(() => () => {})
   const bind = vi.fn(() => (key: string, params?: Record<string, string>) => (params?.message ? `${key}: ${params.message}` : key))
@@ -126,8 +136,12 @@ async function boot(options: BootOptions = {}) {
   // own rows use.
   const openSessionSpy = vi.fn(options.openSession ?? (() => {}))
   const sessionList = options.sessionList ?? { ids: [], byId: {} }
+  // The per-session face behind the history walk (A-05/A-13): absent unless a test
+  // hands it the two optional members, which is exactly how an older client behaves.
+  const sessionOfSpy = vi.fn(() => (options.sessionFace === undefined ? undefined : controller))
   ctx.provide('sessions', {
     scope: scopeSession,
+    sessionOf: sessionOfSpy,
     list: { getSnapshot: () => ({ ids: sessionList.ids, byId: sessionList.byId }) },
     open: openSessionSpy,
   })
@@ -147,7 +161,7 @@ async function boot(options: BootOptions = {}) {
   return {
     ctx, registerSource, sessionOf, sessionScope, scopeSession, mount, localeRegister, bind,
     slotsRegister, slotsInject, openPath, getSettings, updateSettings, sourceDispose, openReference,
-    openSessionSpy,
+    openSessionSpy, sessionBail,
     setRemoteSettings: (next: AtFileSettings) => { settings = next },
   }
 }
@@ -1329,5 +1343,121 @@ describe('dsh-atlas on the Atlas namespace and the right Sidebar', () => {
     await settle()
     expect(navigate).toHaveBeenCalled()
     expect(booted.openSessionSpy).not.toHaveBeenCalled()
+  })
+})
+
+describe('dsh-atlas slot faces without a session scope', () => {
+  it('refuses to build a face for a session the client has no scope for', async () => {
+    const booted = await boot({ withoutSessionScope: true })
+    for (const id of ['atlas-mention-navigation', 'atlas-menu-icons', 'atlas-history-jump']) {
+      const entry = booted.slotsRegister.mock.calls.find(call => (call[0] as { id?: string })?.id === id)?.[0] as
+        { inject: (sessionId: string) => unknown } | undefined
+      expect(entry).toBeDefined()
+      expect(() => entry!.inject('s1')).toThrow(/has no client scope/u)
+    }
+  })
+
+  it('replaces the picker token where the menu reported it, and closes without one', async () => {
+    const booted = await boot({ atFileList: async () => ({ ok: true, value: listing('/', []) }) })
+    const picker = pickerOf(booted).inject('s1') as unknown as {
+      confirm: (path: string) => void
+      close: () => void
+      hooks: { folderPicker: { getSnapshot: () => { value: unknown } } }
+    }
+    // Nothing was opened, so a confirm has no span to replace and writes nothing.
+    picker.confirm('/home/x')
+    expect(booted.sessionBail).not.toHaveBeenCalled()
+    picker.close()
+    expect(picker.hooks.folderPicker.getSnapshot().value).toBeNull()
+  })
+})
+
+describe('dsh-atlas settings verbs', () => {
+  it('writes every control through the one Remote update, field by field', async () => {
+    const booted = await boot()
+    const face = settingsSection(booted).inject() as unknown as Record<string, (...args: never[]) => Promise<void>>
+    const cases: [string, unknown[], string][] = [
+      ['setEnabled', [false], 'enabled'],
+      ['setEnableSkills', [false], 'enableSkills'],
+      ['setEnableChats', [false], 'enableChats'],
+      ['setEnablePlugins', [false], 'enablePlugins'],
+      ['setIgnorePastedMentions', [false], 'ignorePastedMentions'],
+      ['setFolderOpen', ['native'], 'folderOpen'],
+      ['setHistoryJump', [false], 'historyJump'],
+      ['setHistoryJumpFrames', ['message'], 'historyJumpFrames'],
+      ['setHistoryJumpReuseMode', ['append'], 'historyJumpReuseMode'],
+      ['setHistoryJumpSmartFollow', [true], 'historyJumpSmartFollow'],
+      ['setIgnoreFiles', [[' a.log ']], 'ignoreFiles'],
+    ]
+    for (const [verb, args, field] of cases) {
+      booted.updateSettings.mockClear()
+      await face[verb]!(...(args as never[]))
+      expect(booted.updateSettings).toHaveBeenCalledWith(expect.objectContaining({ field }))
+    }
+  })
+
+  it('rewrites one workspace row and drops it when its last rule is removed', async () => {
+    const booted = await boot({
+      atFileGetSettings: async () => ({
+        ok: true,
+        value: {
+          enabled: true,
+          ignoreFiles: [],
+          workspaceIgnoreFiles: [
+            { workspace: '/w', ignoreFiles: ['old.tmp'] },
+            { workspace: '/other', ignoreFiles: ['keep.tmp'] },
+          ],
+          ignorePastedMentions: true,
+        },
+      }),
+    })
+    const face = settingsSection(booted).inject() as unknown as {
+      setWorkspaceIgnoreFiles: (workspace: string, ignoreFiles: readonly string[]) => Promise<void>
+    }
+    await face.setWorkspaceIgnoreFiles('/w', ['new.tmp'])
+    expect(booted.updateSettings).toHaveBeenLastCalledWith({
+      field: 'workspaceIgnoreFiles',
+      value: [
+        { workspace: '/other', ignoreFiles: ['keep.tmp'] },
+        { workspace: '/w', ignoreFiles: ['new.tmp'] },
+      ],
+    })
+    await face.setWorkspaceIgnoreFiles('/w', [])
+    expect(booted.updateSettings).toHaveBeenLastCalledWith({
+      field: 'workspaceIgnoreFiles',
+      value: [{ workspace: '/other', ignoreFiles: ['keep.tmp'] }],
+    })
+  })
+})
+
+describe('dsh-atlas overlay faces and one-level crumbs', () => {
+  it('skips an empty path segment instead of drawing a nameless crumb', async () => {
+    const booted = await boot({ atFileList: async () => ({ ok: true, value: listing('/a//b', []) }) })
+    const rows = await pickerOf(booted).inject('s1').list('/a//b', signal())
+    expect(rows.crumbs.map(crumb => crumb.name)).toEqual(['/', 'a', 'b'])
+  })
+
+  it('hands the readout, the palette, the menu icons and the tab their own face members', async () => {
+    const loadThrough = vi.fn()
+    const projections = { faceOf: vi.fn() }
+    const booted = await boot({ sessionFace: { loadThrough, projections }, atFileList: async () => ({ ok: true, value: listing('/', []) }) })
+    const byId = (id: string) => booted.slotsRegister.mock.calls.find(call => (call[0] as { id?: string })?.id === id)?.[0] as
+      { inject: (sessionId: string) => Record<string, unknown> } | undefined
+    expect(byId('atlas-history-readout')!.inject('s1')).toHaveProperty('roam')
+    expect(byId('atlas-history-palette')!.inject('s1')).toHaveProperty('scope')
+    expect(byId('atlas-menu-icons')!.inject('s1')).toHaveProperty('hooks')
+    const jump = byId('atlas-history-jump')!.inject('s1') as {
+      loadThrough?: (seq: number) => void
+      projections?: unknown
+      menu: unknown
+    }
+    // Both optional members are wired off the same session face (A-05, A-13).
+    expect(jump.projections).toBe(projections)
+    jump.loadThrough?.(42)
+    expect(loadThrough).toHaveBeenCalledWith(42)
+    // The folder tab's own file open goes through the shared file action.
+    const tab = booted.slotsRegister.mock.calls.find(call => call[0]?.name === 'sidebar.right.pane.tab')?.[0] as
+      { inject: (sessionId: string) => { openFile: (path: string) => void } } | undefined
+    expect(tab).toBeUndefined()
   })
 })

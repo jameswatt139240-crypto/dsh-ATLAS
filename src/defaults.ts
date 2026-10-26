@@ -255,6 +255,9 @@ export function recordRecentFile(
 ): WorkspaceRecentFiles[] {
   const trimmed = relative.trim()
   const normalized = normalizeWorkspaceRecentFiles(settings.recentFiles ?? [])
+  // A blank reference is not a file: recording it would put an unnamed row at the
+  // front of the workspace's list and then count against the cap forever.
+  if (trimmed === '') return normalized
   const key = workspacePathKey(workspace)
   const next: WorkspaceRecentFiles[] = []
   let merged = false
@@ -267,7 +270,7 @@ export function recordRecentFile(
     const files = [trimmed, ...row.files.filter(file => file !== trimmed)].slice(0, MAX_RECENT_FILES)
     next.push({ workspace: row.workspace, files })
   }
-  if (!merged && trimmed !== '') next.push({ workspace, files: [trimmed] })
+  if (!merged) next.push({ workspace, files: [trimmed] })
   return next
 }
 

@@ -332,6 +332,42 @@ describe('dsh-atlas host composition', () => {
     }
   })
 
+  it('writes every remaining durable field through its own normalization', async () => {
+    const ctx = new Context()
+    const fiber = await mount(ctx)
+    try {
+      const runtime = ctx.get('atFile') as AtFileRuntime
+      // The switches are stored verbatim: the runtime reads them per call.
+      for (const field of ['enableSkills', 'enableChats', 'enablePlugins', 'ignorePastedMentions'] as const) {
+        expect(await runtime.updateSettings({ field, value: false })).toMatchObject({ [field]: false })
+      }
+      expect(await runtime.updateSettings({ field: 'candidateLimit', value: 7 })).toMatchObject({ candidateLimit: 7 })
+      expect(await runtime.updateSettings({ field: 'folderOpen', value: 'native' })).toMatchObject({ folderOpen: 'native' })
+      for (const field of ['historyJump', 'historyJumpSmartFollow'] as const) {
+        expect(await runtime.updateSettings({ field, value: false })).toMatchObject({ [field]: false })
+      }
+      expect(await runtime.updateSettings({ field: 'historyJumpFrames', value: 'message' })).toMatchObject({ historyJumpFrames: 'message' })
+      expect(await runtime.updateSettings({ field: 'historyJumpReuseMode', value: 'append' })).toMatchObject({ historyJumpReuseMode: 'append' })
+      // Three tables share one shape rule: trim, dedupe, bound, newest first.
+      expect(await runtime.updateSettings({ field: 'recentFiles', value: [{ workspace: '/w', files: [' a ', 'a', 'b'] }] }))
+        .toMatchObject({ recentFiles: [{ workspace: '/w', files: ['a', 'b'] }] })
+      expect(await runtime.updateSettings({
+        field: 'usage',
+        value: [{ key: 'file:a', count: 1, at: 5 }, { key: 'file:b', count: 4, at: 1 }],
+      })).toMatchObject({ usage: [{ key: 'file:b', count: 4, at: 1 }, { key: 'file:a', count: 1, at: 5 }] })
+      expect(await runtime.updateSettings({
+        field: 'externalRefs',
+        value: [
+          // POSIX keeps case, so the duplicate is spelled with a separator instead.
+          { path: '/outside/dir/', kind: 'dir', count: 2, lastUsedAt: 9 },
+          { path: '\\outside\\dir', kind: 'dir', count: 1, lastUsedAt: 3 },
+        ],
+      })).toMatchObject({ externalRefs: [{ path: '/outside/dir', kind: 'dir' }] })
+    } finally {
+      await fiber.dispose()
+    }
+  })
+
   it('search indexes the addressed workspace, files and directories', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-atlas-runtime-'))
     await mkdir(join(root, 'nested'))

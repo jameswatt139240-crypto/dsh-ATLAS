@@ -1,13 +1,20 @@
 /** Filter normalization shared by the Host and browser settings surface. */
 import { describe, expect, it } from 'vitest'
 import {
+  MAX_RECENT_FILES,
+  MAX_USAGE_ENTRIES,
   compileIgnoreRules,
   effectiveIgnoreFiles,
   ignoreRuleKey,
   ignoreFilesSettingsKey,
   normalizeIgnoreFiles,
   normalizeIgnoreRule,
+  normalizeUsage,
   normalizeWorkspaceIgnoreFiles,
+  normalizeWorkspaceRecentFiles,
+  recentFilesFor,
+  recordRecentFile,
+  recordUsage,
   workspaceIgnoreFilesFor,
   workspacePathKey,
 } from '../src/defaults.ts'
@@ -117,5 +124,74 @@ describe('workspace file filters', () => {
     }))).not.toBe(ignoreFilesSettingsKey(settings({
       ignoreFiles: [{ kind: 'regex', pattern: '\\.TS$', caseSensitive: false }],
     })))
+  })
+})
+
+describe('recent files per workspace', () => {
+  it('drops empty rows, duplicate workspaces, blank paths and duplicates, and caps the list', () => {
+    const rows = normalizeWorkspaceRecentFiles([
+      { workspace: '', files: ['a'] },
+      { workspace: '/w', files: [' a ', 'a', '', 'b', ...Array.from({ length: MAX_RECENT_FILES + 5 }, (_, index) => `f${index}`)] },
+      // A second row for the same canonical workspace is a duplicate, not a new list.
+      { workspace: '/w/', files: ['z'] },
+      { workspace: '/empty', files: ['  '] },
+    ])
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.workspace).toBe('/w')
+    expect(rows[0]!.files[0]).toBe('a')
+    expect(rows[0]!.files[1]).toBe('b')
+    expect(rows[0]!.files).toHaveLength(MAX_RECENT_FILES)
+  })
+
+  it('reads one workspace through the canonical path, and nothing for a workspace with no row', () => {
+    const settings = { recentFiles: [{ workspace: '/w/', files: ['a'] }] } as unknown as AtFileSettings
+    expect(recentFilesFor(settings, '/W')).toEqual([])
+    expect(recentFilesFor(settings, '/w')).toEqual(['a'])
+    expect(recentFilesFor({} as AtFileSettings, '/w')).toEqual([])
+  })
+
+  it('moves a re-referenced file to the front, keeps the cap, and appends a new workspace row', () => {
+    const before = { recentFiles: [{ workspace: '/w', files: ['a', 'b'] }] } as unknown as AtFileSettings
+    expect(recordRecentFile(before, '/w', 'b')).toEqual([{ workspace: '/w', files: ['b', 'a'] }])
+    // A blank reference changes nothing at all.
+    expect(recordRecentFile(before, '/w', '   ')).toEqual([{ workspace: '/w', files: ['a', 'b'] }])
+    expect(recordRecentFile(before, '/other', ' c ')).toEqual([
+      { workspace: '/w', files: ['a', 'b'] },
+      { workspace: '/other', files: ['c'] },
+    ])
+    const full = { recentFiles: [{ workspace: '/w', files: Array.from({ length: MAX_RECENT_FILES }, (_, index) => `f${index}`) }] } as unknown as AtFileSettings
+    expect(recordRecentFile(full, '/w', 'fresh')[0]!.files).toHaveLength(MAX_RECENT_FILES)
+    expect(recordRecentFile(full, '/w', 'fresh')[0]!.files[0]).toBe('fresh')
+  })
+})
+
+describe('cross-category usage counters', () => {
+  it('keeps the highest count per key, ignores blank keys and empty rows, and sorts by count then recency', () => {
+    const rows = normalizeUsage([
+      { key: ' file:a ', count: 1, at: 10 },
+      { key: '', count: 5, at: 1 },
+      { key: 'file:a', count: 3, at: 20 },
+      { key: 'file:b', count: 0, at: 30 },
+      { key: 'file:c', count: 3, at: 40 },
+    ] as never)
+    expect(rows).toEqual([
+      { key: 'file:c', count: 3, at: 40 },
+      { key: 'file:a', count: 3, at: 20 },
+    ])
+  })
+
+  it('caps the table so one session cannot grow it without bound', () => {
+    const rows = normalizeUsage(Array.from({ length: MAX_USAGE_ENTRIES + 10 }, (_, index) => ({ key: `file:f${index}`, count: 1, at: index })) as never)
+    expect(rows).toHaveLength(MAX_USAGE_ENTRIES)
+  })
+
+  it('counts one more pick, moves the pick to the front, and ignores a blank key', () => {
+    const settings = { usage: [{ key: 'file:a', count: 2, at: 5 }, { key: 'file:b', count: 1, at: 6 }] } as unknown as AtFileSettings
+    expect(recordUsage(settings, 'file:b', 99)).toEqual([
+      { key: 'file:b', count: 2, at: 99 },
+      { key: 'file:a', count: 2, at: 5 },
+    ])
+    expect(recordUsage(settings, '  ', 99)).toHaveLength(2)
+    expect(recordUsage({} as AtFileSettings, 'file:new', 7)).toEqual([{ key: 'file:new', count: 1, at: 7 }])
   })
 })
