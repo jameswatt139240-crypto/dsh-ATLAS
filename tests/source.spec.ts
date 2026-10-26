@@ -12,6 +12,7 @@ import {
   FILE_ROW_BUDGET,
   FOLDER_ROW_BUDGET,
   createMentionSource,
+  CATEGORY_TTL_MS,
   INDEX_TTL_MS,
   MAX_CANDIDATES,
   SOURCE_NAME,
@@ -100,6 +101,148 @@ function harness(overrides: Partial<Parameters<typeof createMentionSource>[0]> =
     tick: (ms: number) => { clock += ms },
   }
 }
+
+describe('a category page that is still loading when it goes stale', () => {
+  const ask = (source: { candidates: Function }, query: string) =>
+    source.candidates(session('s1'), { query, position: 'leading', signal: new AbortController().signal }) as Promise<{ name: string }[]>
+
+  it('joins an in-flight fetch while it is fresh and abandons it once it is stale', async () => {
+    let release: (value: readonly unknown[]) => void = () => undefined
+    let calls = 0
+    const listSkills = vi.fn(() => {
+      calls += 1
+      if (calls === 1) return new Promise<readonly unknown[]>(resolve => { release = resolve as (value: readonly unknown[]) => void })
+      return Promise.resolve(SKILLS)
+    })
+    const h = harness({ listSkills })
+    // First ask starts the fetch and hangs; nothing has settled yet.
+    const first = ask(h.source, 'skill:')
+    await Promise.resolve()
+    // Still inside the TTL: the second ask joins the same promise instead of
+    // starting another fetch.
+    const joined = ask(h.source, 'skill:')
+    await Promise.resolve()
+    expect(listSkills).toHaveBeenCalledTimes(1)
+    // Past the TTL the stale in-flight fetch is aborted and a new one starts.
+    h.tick(CATEGORY_TTL_MS + 1)
+    const restarted = ask(h.source, 'skill:')
+    await Promise.resolve()
+    expect(listSkills).toHaveBeenCalledTimes(2)
+    release(SKILLS)
+    await Promise.all([first, joined, restarted])
+  })
+
+  it('drops a cache entry whose background refresh failed', async () => {
+    let calls = 0
+    const listSkills = vi.fn(() => {
+      calls += 1
+      return calls === 1 ? Promise.resolve(SKILLS) : Promise.reject(new Error('skills down'))
+    })
+    const h = harness({ listSkills })
+    const fresh = await ask(h.source, 'skill:')
+    expect(fresh.length).toBeGreaterThan(0)
+    // Stale: the cached page answers at once and the refresh runs in the
+    // background, where its rejection has to clear the entry rather than poison it.
+    h.tick(CATEGORY_TTL_MS + 1)
+    const stale = await ask(h.source, 'skill:')
+    expect(stale.map(row => row.name)).toEqual(fresh.map(row => row.name))
+    await Promise.resolve()
+    await Promise.resolve()
+    // The next ask starts a third fetch: the failed refresh left nothing behind.
+    await ask(h.source, 'skill:').catch(() => undefined)
+    expect(listSkills).toHaveBeenCalledTimes(3)
+  })
+})
+
+describe('a global category page and a caller that walks away', () => {
+  const ask = (source: { candidates: Function }, query: string, signal?: AbortSignal) =>
+    source.candidates(session('s1'), { query, position: 'leading', signal: signal ?? new AbortController().signal }) as Promise<{ name: string }[]>
+
+  it('joins a fresh in-flight plugin fetch and restarts a stale one', async () => {
+    let release: (value: readonly unknown[]) => void = () => undefined
+    let calls = 0
+    const listPlugins = vi.fn(() => {
+      calls += 1
+      if (calls === 1) return new Promise<readonly unknown[]>(resolve => { release = resolve as (value: readonly unknown[]) => void })
+      return Promise.resolve(PLUGINS)
+    })
+    const h = harness({ listPlugins })
+    const first = ask(h.source, 'plugin:')
+    await Promise.resolve()
+    const joined = ask(h.source, 'plugin:')
+    await Promise.resolve()
+    expect(listPlugins).toHaveBeenCalledTimes(1)
+    h.tick(CATEGORY_TTL_MS + 1)
+    const restarted = ask(h.source, 'plugin:')
+    await Promise.resolve()
+    expect(listPlugins).toHaveBeenCalledTimes(2)
+    release(PLUGINS)
+    await Promise.all([first, joined, restarted])
+  })
+
+  it('drops a shared page whose refresh failed instead of joining a dead promise', async () => {
+    let calls = 0
+    const listPlugins = vi.fn(() => {
+      calls += 1
+      return calls === 1 ? Promise.resolve(PLUGINS) : Promise.reject(new Error('inventory down'))
+    })
+    const h = harness({ listPlugins })
+    const settled = await ask(h.source, 'plugin:')
+    expect(settled.length).toBeGreaterThan(0)
+    h.tick(CATEGORY_TTL_MS + 1)
+    // Past the TTL the last page still answers; the refresh behind it fails.
+    const stale = await ask(h.source, 'plugin:')
+    expect(stale.length).toBe(settled.length)
+    await Promise.resolve()
+    await Promise.resolve()
+    // The failed refresh cleared the slot, so the next ask starts a new fetch
+    // rather than joining a promise that is already rejected.
+    await ask(h.source, 'plugin:').catch(() => [])
+    expect(listPlugins).toHaveBeenCalledTimes(3)
+  })
+
+  it('still lists the categories when the background warm-up fails', async () => {
+    const search = vi.fn(async () => { throw new Error('index down') })
+    const listSkills = vi.fn(async () => { throw new Error('skills down') })
+    const h = harness({ search, listSkills })
+    const rows = await ask(h.source, '')
+    // The category rows arrive from memory; the warm-up behind them is allowed to
+    // fail, and its failure must not become the menu's answer.
+    expect(rows.map(row => row.name)).toEqual(categoryRows().map(row => row.name))
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(search).toHaveBeenCalled()
+    // The failure is remembered, so the file page reports it rather than an
+    // empty success.
+    await ask(h.source, 'file:').catch(() => undefined)
+  })
+
+  it('serves the last page while refreshing, and drops the entry when the refresh fails', async () => {
+    let calls = 0
+    const listChats = vi.fn(() => {
+      calls += 1
+      return calls === 1 ? Promise.resolve(CHATS) : Promise.reject(new Error('chats down'))
+    })
+    const h = harness({ listChats })
+    const fresh = await ask(h.source, 'chat:')
+    expect(fresh.length).toBeGreaterThan(0)
+    h.tick(CATEGORY_TTL_MS + 1)
+    const stale = await ask(h.source, 'chat:')
+    expect(stale.map(row => row.name)).toEqual(fresh.map(row => row.name))
+    await Promise.resolve()
+    await Promise.resolve()
+    await ask(h.source, 'chat:').catch(() => undefined)
+    expect(listChats).toHaveBeenCalledTimes(3)
+  })
+
+  it('answers an empty page when the caller aborted while the fetch was running', async () => {
+    const h = harness()
+    const controller = new AbortController()
+    const pending = ask(h.source, 'chat:', controller.signal)
+    controller.abort()
+    await expect(pending).resolves.toEqual([])
+  })
+})
 
 describe('pure helpers of the source', () => {
   it('answers an empty needle for everything and gives up below three characters', () => {
