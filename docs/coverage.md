@@ -14,7 +14,7 @@ Measured, not estimated. Every number here comes from one command:
 | Tests | **1087 passed, 1 skipped** |
 | Statements | **96.61%** (5301 / 5487) |
 | Branches | **92.22%** (3582 / 3884) |
-| Lines | **98.22%** (4363 / 4442) |
+| Lines | **98.28%** (4366 / 4442) |
 | Functions | see `coverage/coverage-final.json` |
 | Typecheck | `tsc --noEmit` → 0 errors |
 | Publish surface | `node scripts/verify-publish-surface.mjs` → 67 files, ad-free bundle |
@@ -66,7 +66,7 @@ caller sharing an in-flight promise, retired-client fallbacks, the folder picker
 None of them is exempt — each has a test shape that would cover it, and this table is the queue.
 
 | `src/client/index.ts` | 55 | 425, 426, 427, 432, 500, 501, 530, 544, 622, 636, 649, 662, 663, 680, 681, 685, 716, 717, 718, 719, 720, 750, 751, 753, 755, 756, 757, 758, 759, 760, 761, 762, 763, 764, 765, 787, 953, 1119, 1194, 1252, 1260, 1261, 1279, 1306, 1310, 1311, 1314, 1329, 1330, 1347, 1348, 1375, 1376, 1377, 1468 |
-| `src/client/source.ts` | 32 | 475, 801, 860, 1141, 1145, 1147, 1148, 1234, 1563, 1668, 1706, 1755, 1766, 1767, 1768, 1775, 1795, 1800, 1810, 1811, 1812, 1837, 1843, 1874, 1876, 1908, 1936, 2027, 2090, 2091, 2099, 2215 |
+| `src/client/source.ts` | 27 | 475, 801, 860, 1141, 1145, 1147, 1148, 1234, 1563, 1668, 1706, 1755, 1766, 1767, 1768, 1775, 1811, 1837, 1843, 1874, 1908, 1936, 2027, 2090, 2091, 2099, 2215 |
 | `src/client/FolderPicker.tsx` | 15 | 283, 320, 342, 359, 383, 390, 396, 564, 582, 603, 666, 669, 689, 770, 773 |
 | `src/index.ts` | 5 | 193, 196, 361, 374, 389 |
 | `src/runtime.ts` | 5 | 57, 173, 275, 354, 407 |
