@@ -864,6 +864,21 @@ describe('the note under a filtered list', () => {
     await settle()
     expect(dialog(full.container).textContent).toContain(t('picker.noMatch'))
   })
+
+  it('does nothing when Enter lands on a list with no row to act on', async () => {
+    const full = mount()
+    await settle()
+    press(full.container, 'z')
+    press(full.container, 'z')
+    await settle()
+    // No row is highlighted because no row exists: Enter must not confirm, close
+    // or navigate — it is a no-op, not a guess at what the user meant.
+    press(full.container, 'Enter')
+    await settle()
+    expect(dialog(full.container)).not.toBeNull()
+    expect(full.confirm).not.toHaveBeenCalled()
+    expect(dialog(full.container).textContent).toContain(t('picker.noMatch'))
+  })
 })
 
 describe('the crumbs that jump', () => {
