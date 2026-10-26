@@ -1374,6 +1374,44 @@ describe('dsh-atlas folder scoping from the composer', () => {
   })
 })
 
+describe('dsh-atlas recordings the picker makes', () => {
+  it('records a picked file as recently referenced for its workspace', async () => {
+    const booted = await boot({
+      atFileSearch: async () => ({ ok: true as const, value: [{ path: '/ws/src/one.ts', relative: 'src/one.ts', kind: 'file' as const }] }),
+    })
+    await settle()
+    // The index must have settled: recency is recorded only for an entry the
+    // source actually knows, so the menu is opened once first.
+    await registered(booted).candidates(s1, { query: '', position: 'leading', signal: signal() })
+    await settle()
+    // The pick that records the recency is the same one the menu already returns.
+    registered(booted).onPick?.({
+      candidate: { name: 'one.ts', value: 'src/one.ts', mentionKind: 'file' },
+      session: s1,
+      action: 'accept',
+      span: { start: 0, end: 2 },
+    } as never)
+    await settle()
+    expect(booted.updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ field: 'recentFiles' }),
+    )
+  })
+
+  it('writes the folder a pending pick confirmed, and only then', async () => {
+    const booted = await boot({ uiWorkspace: { createDirectory: async () => '' } })
+    const folderRow = { name: '选择文件夹…', value: 'folder-choose', mentionKind: 'folder-choose' }
+    await settle()
+    registered(booted).onPick?.({ candidate: folderRow, session: s1, action: 'accept', span: { start: 3, end: 5 } })
+    // With no native chooser the plugin's own dialog takes the pick…
+    const picker = pickerOf(booted).inject('s1')
+    picker.confirm('/home/x/picked')
+    const call = booted.sessionBail.mock.calls.at(-1) as unknown as [unknown, string, { text: string; span: { start: number; end: number } }]
+    // …and confirming rewrites the reported span, keeping it (not the whole draft).
+    expect(call[2].text).toBe('@/home/x/picked/ ')
+    expect(call[2].span).toEqual({ start: 3, end: 5 })
+  })
+})
+
 describe('dsh-atlas chooser fallbacks', () => {
   it('opens its own dialog when the native chooser rejects', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
