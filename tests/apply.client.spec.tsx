@@ -14,7 +14,8 @@ import { NS, en, zh } from '../src/client/locales.ts'
 import { SOURCE_NAME } from '../src/client/source.ts'
 import { STYLE_ID } from '../src/client/styles.ts'
 import { DEFAULT_IGNORE_FILES } from '../src/defaults.ts'
-import type { AtFileSettings, AtFileSettingsUpdate, DirectoryListing, ReferenceInfo, WorkspaceIgnoreFiles } from '../src/contract.ts'
+import type { AtFileSettings, AtFileSettingsUpdate, BrowseListing, DirectoryListing, RecentFolder, ReferenceInfo, WorkspaceIgnoreFiles } from '../src/contract.ts'
+import type { AtlasRuntimeInfo } from '../src/atlas.ts'
 
 type RemoteResult<T> = { ok: true; value: T } | { ok: false; error: { code: string; message: string; details: object } }
 
@@ -29,6 +30,16 @@ interface BootOptions {
   atFileList?: (sessionId: SessionId, path: string, include: string, signal: AbortSignal) => Promise<RemoteResult<DirectoryListing>>
   atFileGetSettings?: () => Promise<RemoteResult<AtFileSettings>>
   atFileUpdateSettings?: (update: AtFileSettingsUpdate) => Promise<RemoteResult<AtFileSettings>>
+  /** The chooser's own listing, carrying `hasChildren`; absent on an older Host. */
+  atFileBrowse?: (sessionId: SessionId, path: string, signal: AbortSignal) => Promise<RemoteResult<BrowseListing>>
+  /** The folders offered before the chooser browses anywhere; absent on an older Host. */
+  atFileRecentFolders?: (sessionId: SessionId, signal: AbortSignal) => Promise<RemoteResult<readonly RecentFolder[]>>
+  /** The right Sidebar's tab registry, so the folder tab registers. */
+  sidebarTabs?: { register: (definition: unknown) => () => void }
+  /** The product's workspace view: session navigation and folder creation. */
+  uiWorkspace?: { openSession?: (target: SessionId) => void; createDirectory: (path: string, name: string) => Promise<string> }
+  /** The Atlas namespace that carries the running Harness's own facts. */
+  remoteAtlas?: { runtime: () => Promise<RemoteResult<AtlasRuntimeInfo>>; gitChanges: (sessionId: SessionId, signal: AbortSignal) => Promise<RemoteResult<readonly unknown[]>> }
   openPath?: () => Promise<{ ok: true } | { ok: false; error: { message: string } }>
   enabled?: boolean
   ignorePastedMentions?: boolean
@@ -99,10 +110,15 @@ async function boot(options: BootOptions = {}) {
       // without a stub the plugin treats the target as unverified and opens.
       ...(options.atFileInspect === undefined ? {} : { inspect: options.atFileInspect }),
       ...(options.atFileList === undefined ? {} : { list: options.atFileList }),
+      ...(options.atFileBrowse === undefined ? {} : { browse: options.atFileBrowse }),
+      ...(options.atFileRecentFolders === undefined ? {} : { recentFolders: options.atFileRecentFolders }),
       getSettings,
       updateSettings,
     })
   }
+  if (options.remoteAtlas !== undefined) ctx.provide('remote.atlas', options.remoteAtlas)
+  if (options.sidebarTabs !== undefined) ctx.provide('sidebarRightTabs', options.sidebarTabs)
+  if (options.uiWorkspace !== undefined) ctx.provide('uiWorkspace', options.uiWorkspace)
   ctx.provide('slots', { inject: slotsInject, register: slotsRegister })
   ctx.provide('locale', { register: localeRegister, bind })
   // The draft's session face: a bare `@label` may only become a session link on
@@ -1166,5 +1182,152 @@ describe('dsh-atlas client apply', () => {
     expect(style!.textContent).toContain('max-width: var(--dsh-composer-card-max-width)')
     await boot()
     expect(document.querySelectorAll(`#${STYLE_ID}`)).toHaveLength(1)
+  })
+})
+/**
+ * The chooser's own face: the dialog talks to the Host only through the plugin's
+ * listing, so these are the branches that decide what the dialog can offer.
+ */
+interface RegisteredPicker {
+  inject: (sessionId: string) => {
+    list: (path: string | undefined, signal: AbortSignal) => Promise<{ path: string; crumbs: { name: string }[]; entries: { name: string; path: string; hidden: boolean }[] }>
+    browse: (path: string | undefined, signal: AbortSignal) => Promise<{ path: string; entries: { name: string; path: string }[] }>
+    recent: (signal: AbortSignal) => Promise<{ path: string; name: string; reason: string }[]>
+    create: (path: string, name: string) => Promise<string>
+  }
+}
+
+function pickerOf(booted: Awaited<ReturnType<typeof boot>>): RegisteredPicker {
+  const entry = booted.slotsRegister.mock.calls
+    .find(call => (call[0] as { id?: string })?.id === 'atlas-folder-picker')?.[0] as RegisteredPicker | undefined
+  expect(entry).toBeDefined()
+  return entry as RegisteredPicker
+}
+
+/** One directory listing as the Host spells it: files included, one level deep. */
+const listing = (path: string, entries: readonly (string | { name: string; kind: 'file' | 'dir' })[]): DirectoryListing => ({
+  path,
+  entries: entries.map(entry => {
+    const name = typeof entry === 'string' ? entry : entry.name
+    return {
+      name,
+      kind: typeof entry === 'string' ? 'dir' as const : entry.kind,
+      hidden: name.startsWith('.'),
+    }
+  }),
+})
+
+describe('dsh-atlas folder chooser over the Host listing', () => {
+  it('offers only the folders a row can open, with the path joined and crumbs rebuilt', async () => {
+    const booted = await boot({
+      atFileList: async () => ({ ok: true, value: listing('/home/x', ['one', { name: 'two.txt', kind: 'file' }, '.git']) }),
+    })
+    const rows = await pickerOf(booted).inject('s1').list('/home/x', signal())
+    expect(rows.entries.map(row => row.name)).toEqual(['one', '.git'])
+    expect(rows.entries[0]!.path).toBe('/home/x/one')
+    expect(rows.entries[1]!.hidden).toBe(true)
+    // `home`/`crumbs` are not part of the plugin's contract: the strip is built from the path.
+    expect(rows.crumbs.map(crumb => crumb.name)).toEqual(['/', 'home', 'x'])
+  })
+
+  it('browses through the Host listing when the Host has one, keeping its hasChildren facts', async () => {
+    const browse = vi.fn(async () => ({ ok: true as const, value: { path: '/home/x', entries: [{ name: 'one', kind: 'dir' as const, hidden: false, hasChildren: true }] } }))
+    const booted = await boot({ atFileBrowse: browse })
+    const rows = await pickerOf(booted).inject('s1').browse('/home/x', signal())
+    expect(browse).toHaveBeenCalled()
+    expect(rows.entries).toEqual([{ name: 'one', path: '/home/x/one', hidden: false, hasChildren: true }])
+  })
+
+  it('falls back to the one-level listing on a Host built before the browser existed', async () => {
+    const list = vi.fn(async () => ({ ok: true as const, value: listing('/home/x', ['one']) }))
+    const booted = await boot({ atFileList: list })
+    const rows = await pickerOf(booted).inject('s1').browse('/home/x', signal())
+    expect(list).toHaveBeenCalledWith('s1', '/home/x', '', expect.anything())
+    expect(rows.entries.map(row => row.name)).toEqual(['one'])
+  })
+
+  it('turns a browse refusal into the dialog\'s reason instead of an empty folder', async () => {
+    const booted = await boot({
+      atFileBrowse: async () => ({ ok: false, error: { code: 'EACCES', message: 'denied', details: {} } }),
+    })
+    await expect(pickerOf(booted).inject('s1').browse('/root', signal())).rejects.toThrow('browse failed: EACCES: denied')
+  })
+
+  it('says so when the Host cannot list directories at all', async () => {
+    const booted = await boot()
+    await expect(pickerOf(booted).inject('s1').list('/', signal())).rejects.toThrow('this host cannot list directories')
+  })
+
+  it('offers the recent folders, and none from a Host that has no ledger', async () => {
+    const withLedger = await boot({
+      atFileRecentFolders: async () => ({ ok: true, value: [{ path: '/home/x', name: 'x', reason: 'recent' as RecentFolder['reason'] }] }),
+    })
+    expect(await pickerOf(withLedger).inject('s1').recent(signal())).toEqual([{ path: '/home/x', name: 'x', reason: 'recent' }])
+    // An unreadable ledger is a convenience, never a reason to take the dialog down.
+    const failing = await boot({
+      atFileRecentFolders: async () => ({ ok: false, error: { code: 'EIO', message: 'gone', details: {} } }),
+    })
+    expect(await pickerOf(failing).inject('s1').recent(signal())).toEqual([])
+    const legacy = await boot()
+    expect(await pickerOf(legacy).inject('s1').recent(signal())).toEqual([])
+  })
+
+  it('creates a folder only through a workspace face that can, and refuses otherwise', async () => {
+    const createDirectory = vi.fn(async () => '/home/x/new')
+    const booted = await boot({ uiWorkspace: { createDirectory } })
+    await expect(pickerOf(booted).inject('s1').create('/home/x', 'new')).resolves.toBe('/home/x/new')
+    expect(createDirectory).toHaveBeenCalledWith('/home/x', 'new')
+    const withoutFace = await boot()
+    // The refusal is synchronous: the face decides before the dialog awaits.
+    expect(() => pickerOf(withoutFace).inject('s1').create('/home/x', 'new')).toThrow('picker.error')
+  })
+})
+
+describe('dsh-atlas on the Atlas namespace and the right Sidebar', () => {
+  it('reads the running Harness facts through the Atlas namespace', async () => {
+    const runtime = vi.fn(async () => ({ ok: true as const, value: {} as AtlasRuntimeInfo }))
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    await boot({ remoteAtlas: { runtime, gitChanges: async () => ({ ok: true, value: [] }) } })
+    expect(runtime).toHaveBeenCalled()
+    expect(error).not.toHaveBeenCalled()
+    error.mockRestore()
+  })
+
+  it('keeps the version unverified when the namespace refuses or throws', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    await boot({ remoteAtlas: { runtime: async () => { throw new Error('no face') }, gitChanges: async () => ({ ok: true, value: [] }) } })
+    expect(error).toHaveBeenCalledWith('[dsh-atlas] atlas runtime facts unavailable:', expect.any(Error))
+    error.mockRestore()
+  })
+
+  it('registers the folder tab and walks one level through the Host listing', async () => {
+    const registerTab = vi.fn(() => () => {})
+    const booted = await boot({ sidebarTabs: { register: registerTab }, atFileList: async () => ({ ok: true, value: listing('/home/x', ['one']) }) })
+    expect(registerTab).toHaveBeenCalled()
+    const tab = booted.slotsRegister.mock.calls
+      .find(call => call[0]?.name === 'sidebar.right.pane.tab')?.[0] as {
+        inject: (sessionId: string) => { list: (path: string, signal: AbortSignal, include?: string) => Promise<DirectoryListing>; openNative: (path: string) => void }
+      } | undefined
+    expect(tab).toBeDefined()
+    const rows = await tab!.inject('s1').list('/home/x', signal())
+    expect(rows.entries.map(entry => entry.name)).toEqual(['one'])
+    tab!.inject('s1').openNative('/home/x/one')
+    // `openNative` hands the path to the Session Remote's opener, which takes a request.
+    expect(booted.openPath).toHaveBeenCalledWith({ path: '/home/x/one' })
+  })
+
+  it('opens a session reference through the workspace view that owns navigation', async () => {
+    const navigate = vi.fn()
+    const booted = await boot({
+      uiWorkspace: { openSession: navigate, createDirectory: async () => '' },
+      sessionList: { ids: ['s2'], byId: { s2: { displayTitle: 'second' } } },
+    })
+    // The draft's session rule hands a bare `@second` to the opener.
+    const opened = draftBridge(booted).inject('s1').actionFor({ kind: 'session', sessionId: 's2' } as never)
+    expect(opened).toBeDefined()
+    opened?.()
+    await settle()
+    expect(navigate).toHaveBeenCalled()
+    expect(booted.openSessionSpy).not.toHaveBeenCalled()
   })
 })
