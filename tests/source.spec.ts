@@ -201,6 +201,16 @@ describe('a global category page and a caller that walks away', () => {
     expect(listPlugins).toHaveBeenCalledTimes(3)
   })
 
+  it('reports a failed index on the mixed page instead of "no files match"', async () => {
+    const search = vi.fn(async () => { throw new Error('index down') })
+    const listSkills = vi.fn(async () => { throw new Error('skills down') })
+    const h = harness({ search, listSkills })
+    const rows = await ask(h.source, 'vi')
+    // The index is the only source of file rows: its failure has to be visible,
+    // while a missing skills row stays silent.
+    expect(rows.some(row => row.name.includes('index down'))).toBe(true)
+  })
+
   it('still lists the categories when the background warm-up fails', async () => {
     const search = vi.fn(async () => { throw new Error('index down') })
     const listSkills = vi.fn(async () => { throw new Error('skills down') })
@@ -261,6 +271,51 @@ describe('pure helpers of the source', () => {
     expect(pluginScope('@deepseek-ai/dsh-atlas')).toBe('@deepseek-ai')
     expect(pluginScope('@bare')).toBe('@bare')
     expect(pluginScope('dsh-atlas')).toBe('其他')
+  })
+})
+
+describe('invalidating the off-workspace ledger', () => {
+  const askFolder = (source: { candidates: Function }) =>
+    source.candidates(session('s1'), { query: 'folder:', position: 'leading', signal: new AbortController().signal }) as Promise<{ name: string }[]>
+
+  it('aborts and forgets a read ledger, and shrugs at a session it never read', async () => {
+    const external = vi.fn(async () => ({ canDiscover: true, roots: ['/tmp'], folders: ['/tmp/repo'] }))
+    const h = harness({ external })
+    // A session with no ledger entry: nothing to abort, and no throw.
+    expect(() => { h.invalidateExternal(session('s1').sessionId) }).not.toThrow()
+    const rows = await askFolder(h.source)
+    // The ledger answers as a folded group; opening it is a separate concern.
+    expect(rows.some(row => row.name.includes('工作区外'))).toBe(true)
+    // A live entry: it is aborted and dropped, so the next ask reads the Host again.
+    h.invalidateExternal(session('s1').sessionId)
+    expect(() => { h.invalidateExternal(session('s1').sessionId) }).not.toThrow()
+    // Idempotent: a second drop finds nothing to abort and does not throw.
+    expect(() => { h.invalidateExternal(session('s1').sessionId) }).not.toThrow()
+  })
+})
+
+describe('picking a category row', () => {
+  it('drafts its own token, books the use, and refuses a header', () => {
+    const usage: unknown[][] = []
+    const h = harness({ onUsage: (id, kind, value) => { usage.push([kind, value]) } })
+    const pick = (candidate: unknown) =>
+      h.source.onPick({ candidate, session: session('s1'), position: 'inline', via: 'menu', span: { start: 0, end: 1, draftRev: 1 } } as never)
+
+    expect(pick({ name: 'blender-modeling', value: 'blender-modeling', mentionKind: 'skill' }))
+      .toEqual({ text: '@skill:blender-modeling ' })
+    // A chat without a uri cannot be referenced: the row refuses rather than
+    // drafting a token the Host would not resolve.
+    expect(pick({ name: 'Payment rates', mentionKind: 'chat' })).toBeUndefined()
+    expect(pick({ name: 'Payment rates', value: 'chat:a', chatUri: 'dsh-session:YQ', mentionKind: 'chat' }))
+      .toEqual({ text: '@[Payment rates](dsh-session:YQ) ' })
+    expect(pick({ name: 'dsh-atlas', value: 'dsh-atlas', mentionKind: 'plugin' }))
+      .toEqual({ text: '@plugin:dsh-atlas ' })
+    // Headers fold and notes say something: neither drafts text.
+    expect(pick({ name: '▾ 技能', mentionKind: 'skill-group' })).toBeUndefined()
+    expect(pick({ name: '▾ 文件夹', mentionKind: 'dir-group' })).toBeUndefined()
+    expect(pick({ name: '空文件夹', mentionKind: 'browse-note' })).toBeUndefined()
+
+    expect(usage).toEqual([['skill', 'blender-modeling'], ['chat', 'chat:a'], ['plugin', 'dsh-atlas']])
   })
 })
 
