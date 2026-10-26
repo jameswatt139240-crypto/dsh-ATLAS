@@ -68,7 +68,20 @@ jobs:
           else
             echo "already=no" >> "$GITHUB_OUTPUT"
           fi
+      # A prerelease must never take `latest`: that would hand every plain
+      # `dsh plugin add @sidequest-007/dsh-atlas` a port build. Tag it with its own
+      # prerelease id (`1.0.9-port.6` → `port`) and keep `latest` for stable versions.
+      - name: Pick the dist-tag
+        id: tag
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          case "$version" in
+            *-*) tag="${version#*-}"; tag="${tag%%.*}" ;;
+            *)   tag="latest" ;;
+          esac
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "dist-tag for ${version}: ${tag}"
       # No NODE_AUTH_TOKEN on purpose: npm exchanges the OIDC identity itself.
       - name: Publish
         if: steps.published.outputs.already == 'no'
-        run: npm publish --ignore-scripts
+        run: npm publish --ignore-scripts --tag "${{ steps.tag.outputs.tag }}"
