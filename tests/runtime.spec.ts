@@ -10,7 +10,9 @@ import { Context, symbols } from '@deepseek-ai/cordis'
 import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import { execFile } from 'node:child_process'
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
+import { promisify } from 'node:util'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
@@ -359,6 +361,80 @@ describe('dsh-atlas host composition', () => {
       expect(() => registry.runtime(aborted.signal)).toThrow()
     } finally {
       await ctxFiber.dispose()
+    }
+  })
+
+  it('reads a real workspace: references, a missing browse path and a failed index', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'atlas-runtime-'))
+    try {
+      await mkdir(join(root, 'src'), { recursive: true })
+      await writeFile(join(root, 'src', 'a.ts'), 'export const a = 1\n')
+      const ctx = new Context()
+      const fiber = await mount(ctx)
+      try {
+        const runtime = ctx.get('atFile') as AtFileRuntime
+        const agent = agentWith(root)
+        const signal = new AbortController().signal
+        const inspected = await runtime.inspect(agent, ['src/a.ts', 'src/nope.ts'], signal)
+        expect(inspected.map(info => [info.relative, info.exists])).toEqual([
+          ['src/a.ts', true],
+          ['src/nope.ts', false],
+        ])
+        // A path whose chain still exists falls back to the nearest real folder
+        // (that is why browsing an empty box lands somewhere useful).
+        const nearest = await runtime.browse(agent, join(root, 'no', 'such', 'place'), signal)
+        expect(nearest.entries.map(entry => entry.name)).toContain('src')
+        expect(nearest.error).toBeUndefined()
+        // NOTE: the `missing` arm (`nearestDirectory` returning undefined) needs a
+        // path whose whole ancestor chain is absent. On POSIX the chain always ends
+        // at `/`, which exists, so that arm is Windows-only — see docs/coverage.md.
+
+        // A workspace that is a FILE makes the index read reject; the in-flight
+        // entry must then be dropped so the next call retries instead of
+        // re-serving a rejected promise forever.
+        await expect(runtime.search(agentWith(join(root, 'src', 'a.ts')), signal)).rejects.toThrow()
+        const retried = await runtime.search(agent, signal)
+        expect(retried.map(entry => entry.relative)).toContain('src/a.ts')
+      } finally {
+        await fiber.dispose()
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('lists a real repository, ranks without a workspace, and browses its own cwd', async () => {
+    const git = promisify(execFile)
+    const repo = await mkdtemp(join(tmpdir(), 'atlas-git-'))
+    try {
+      await writeFile(join(repo, 'a.ts'), 'export const a = 1\n')
+      await git('git', ['init', '-q'], { cwd: repo })
+      await git('git', ['add', '-A'], { cwd: repo })
+      await git('git', ['-c', 'user.name=Eason', '-c', 'user.email=eason@local', 'commit', '-qm', 'seed'], { cwd: repo })
+      await writeFile(join(repo, 'a.ts'), 'export const a = 2\n')
+
+      const ctx = new Context()
+      const fiber = await mount(ctx)
+      try {
+        const signal = new AbortController().signal
+        const atlas = ctx.get('atlas') as { gitChanges: (agent: Agent, signal: AbortSignal) => Promise<readonly { path: string }[]> }
+        // The built-in `@git` provider's data: changed paths from the real index.
+        expect((await atlas.gitChanges(agentWith(repo), signal)).map(change => change.path)).toContain('a.ts')
+
+        const runtime = ctx.get('atFile') as AtFileRuntime
+        // A session with no workspace still gets a ranking (its own cwd is ''), from
+        // whatever workspace ledger this Host has — never a throw.
+        expect(Array.isArray(await runtime.recentFolders(agentWith(undefined), signal))).toBe(true)
+        // Browsing with no path starts at the workspace itself when out-of-workspace
+        // discovery is off: `browseRoot` falls back to '.' rather than the drive root.
+        const own = await runtime.browse(agentWith(repo), '', signal)
+        expect(own.error).toBeUndefined()
+        expect(own.entries.map(entry => entry.name)).toContain('a.ts')
+      } finally {
+        await fiber.dispose()
+      }
+    } finally {
+      await rm(repo, { recursive: true, force: true })
     }
   })
 
