@@ -1566,6 +1566,19 @@ describe('stale-while-revalidate', () => {
   })
 })
 
+describe('a draft scope that cannot be resolved', () => {
+  it('keeps the unscoped view and reports the failure once', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const h = harness({ scopeFolder: async () => { throw new Error('scope boom') } })
+    const source = await prime(h)
+    const rows = await source.candidates(session('s1'), { query: 'file:', position: 'leading', signal: new AbortController().signal })
+    // A composer whose scope cannot be answered still gets a usable file view.
+    expect(rows.some(row => row.mentionKind === 'file')).toBe(true)
+    expect(warn).toHaveBeenCalledWith('[dsh-atlas] draft scope lookup failed:', expect.any(Error))
+    warn.mockRestore()
+  })
+})
+
 describe('mixed sections and tags', () => {
   it('shows the most-used reference first, then a divider and the relevance section', async () => {
     const h = harness({

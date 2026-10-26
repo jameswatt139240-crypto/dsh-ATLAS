@@ -102,6 +102,15 @@ caller sharing an in-flight promise, retired-client fallbacks, the folder picker
   branch at `1145–1148` is driven from somewhere else (line `2090`, the scoped listing path). Covering
   it needs a `@folder:<sub>` request with a listing seam, not a bare `@folder:`.
 
+- **The plugin's own `scopeFolder` cannot be reached from `tests/apply.client.spec.tsx`.** With a
+  composer DOM in place (`<div data-lexical-editor="true"><p><span>@e:/outsidedir/ @file:</span></p>`),
+  `draftTokens()` reads both tokens in the test process and `draftScopeOf(...)` resolves `/ws/docs`
+  directly, but the same call inside the booted plugin never reaches `atFile.inspect` — zero calls,
+  even after `settle()` plus a macrotask. `registered(source).candidates(s1, 'file:')` does render
+  rows for the same session, so the source path itself works; what never happens is the scope read.
+  Settling this needs a probe inside `src/client/index.ts` (`atFile` identity at call time), i.e. a
+  temporary log, not another guess. ~30 statements ride on it (`index.ts:740–790`).
+
 ### 3. One measurement artifact (proved, not assumed)
 
 `src/files.ts:253` (`if (linked && !await isDirectory(child, signal)) continue`) is reported as
