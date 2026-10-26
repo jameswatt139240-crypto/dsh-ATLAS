@@ -11,10 +11,10 @@ Measured, not estimated. Every number here comes from one command:
 | Metric | Value |
 | --- | --- |
 | Test files | 43 passed |
-| Tests | **1123 passed, 1 skipped** |
-| Statements | **98.01%** (5378 / 5487) |
-| Branches | **93.66%** (3638 / 3884) |
-| Lines | **99.16%** (4405 / 4442) |
+| Tests | **1126 passed, 1 skipped** |
+| Statements | **98.12%** (5384 / 5487) |
+| Branches | **93.79%** (3643 / 3884) |
+| Lines | **99.23%** (4408 / 4442) |
 | Functions | see `coverage/coverage-final.json` |
 | Typecheck | `tsc --noEmit` → 0 errors |
 | Publish surface | `node scripts/verify-publish-surface.mjs` → 67 files, ad-free bundle |

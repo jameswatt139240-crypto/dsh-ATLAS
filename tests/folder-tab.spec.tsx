@@ -182,13 +182,21 @@ describe('the folder tab', () => {
   })
 
   it('offers the other drives at a drive root, where there is no parent', async () => {
+    const visited: string[] = []
     const { container, root } = mountTab({
       path: 'E:/',
-      listing: path => ({ path, entries: [], drives: ['C:/', 'E:/'] }),
+      listing: path => {
+        visited.push(path)
+        return { path, entries: [], drives: ['C:/', 'E:/'] }
+      },
     })
     await settle()
     expect((container.querySelector('.dsh_atlas_folderUp') as HTMLButtonElement).disabled).toBe(true)
     expect([...container.querySelectorAll('.dsh_atlas_folderRow')].map(row => row.textContent)).toEqual(['C:/', 'E:/'])
+    // Clicking another drive is a request for that root, not a dead row.
+    ;(container.querySelectorAll('.dsh_atlas_folderRow')[0] as HTMLButtonElement).click()
+    await settle()
+    expect(visited).toContain('C:/')
     root.unmount()
   })
 
@@ -383,6 +391,37 @@ describe('the folder tab', () => {
     expect(container.querySelector('[role="alert"]')?.textContent).toBe(zh['folder.error.outside'])
     expect(container.querySelector('.dsh_atlas_folderRow')).toBeNull()
     root.unmount()
+  })
+
+  it('reports a throw that is not an Error, and says nothing after going away', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    let settleList: ((value: { path: string; entries: never[] }) => void) | undefined
+    const stub = {
+      useTabInfo: () => ({ tab: { contentId: folderAddress('E:/x'), navigation: { address: folderAddress('E:/x') } } }),
+      list: async () => await new Promise<{ path: string; entries: never[] }>(resolve => { settleList = resolve }),
+      openFile: () => {}, openNative: () => {}, t, session: {},
+    }
+    flushSync(() => { root.render(<FolderTab {...(stub as unknown as FolderTabProps)} />) })
+    await Promise.resolve()
+    // The tab goes away while its listing is still in flight: the answer must not
+    // be written into an unmounted tree.
+    root.unmount()
+    settleList?.({ path: 'E:/x', entries: [] })
+    await settle()
+
+    const plain = document.createElement('div')
+    document.body.appendChild(plain)
+    const second = createRoot(plain)
+    const throwing = {
+      ...stub,
+      list: async () => { throw 'host said no' },
+    }
+    flushSync(() => { second.render(<FolderTab {...(throwing as unknown as FolderTabProps)} />) })
+    await settle()
+    expect(plain.querySelector('[role="alert"]')?.textContent).toContain('host said no')
+    second.unmount()
   })
 
   it('reports a failed listing rather than an empty folder', async () => {

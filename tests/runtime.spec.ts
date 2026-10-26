@@ -1024,6 +1024,31 @@ describe('dsh-atlas atMention service and reference wiring', () => {
     expect(JSON.stringify(await plain.expandSkills(messages, signal))).not.toContain('BODY OF REVIEW')
   })
 
+  it('shares one plugin inventory read between concurrent callers, then caches it', async () => {
+    const ctx = new Context()
+    let release: ((value: { entries: readonly { moduleName: string; enabled: boolean }[] }) => void) | undefined
+    const list = vi.fn(async () => await new Promise<{ entries: readonly { moduleName: string; enabled: boolean }[] }>(resolve => { release = resolve }))
+    ctx.provide('pluginInventory', { list })
+    const fiber = await mount(ctx)
+    try {
+      const mention = ctx.get('atMention') as AtMentionRuntime
+      const signal = new AbortController().signal
+      // Two callers while the inventory read is still in flight: one read, shared.
+      const first = mention.listPlugins(signal)
+      const second = mention.listPlugins(signal)
+      release?.({ entries: [{ moduleName: 'dsh-atlas', enabled: true }] })
+      const [a, b] = await Promise.all([first, second])
+      expect(a).toEqual([{ entryId: 'dsh-atlas', moduleName: 'dsh-atlas', enabled: true }])
+      expect(b).toEqual(a)
+      expect(list).toHaveBeenCalledTimes(1)
+      // And the settled value is served from the cache inside the TTL.
+      expect(await mention.listPlugins(signal)).toEqual(a)
+      expect(list).toHaveBeenCalledTimes(1)
+    } finally {
+      await fiber.dispose()
+    }
+  })
+
   it('caches the mention category lists and answers empty without a service', async () => {
     const ctx = new Context()
     const skillsFace = {
@@ -1043,7 +1068,6 @@ describe('dsh-atlas atMention service and reference wiring', () => {
       expect(await mention.listSkills(agent, signal)).toHaveLength(1)
       // Second read inside the TTL is served from the cache, not the service.
       expect(await mention.listSkills(agent, signal)).toHaveLength(1)
-      console.log('SKILLROWS', JSON.stringify(await mention.listSkills(agent, signal)).slice(0,200), 'CALLS', skillsFace.list.mock.calls.length, 'GETS', (ctx as unknown as {get:(k:string)=>unknown}).get('skills') === skillsFace)
       // The service the plugin reads is the one this test mounted (same object).
       expect((ctx as unknown as { get(key: string): unknown }).get('skills')).toBe(skillsFace)
       expect(skillsFace.list).toHaveBeenCalledTimes(1)

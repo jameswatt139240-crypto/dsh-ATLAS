@@ -40,6 +40,7 @@ function props(over: {
   workspaces?: readonly WorkspaceStub[]
   currentCwd?: string
   recentWorkspaceId?: string
+  sessions?: Record<string, { updatedAt: number }>
   setEnabled?: (enabled: boolean) => Promise<void>
   setEnableSkills?: (enableSkills: boolean) => Promise<void>
   setEnableChats?: (enableChats: boolean) => Promise<void>
@@ -68,9 +69,14 @@ function props(over: {
         ...over.settings,
       }
   const items = [...over.workspaces ?? []]
-  const sessionState = over.currentCwd === undefined
-    ? { current: undefined, byId: {} }
-    : { current: 'current', byId: { current: { cwd: over.currentCwd } } }
+  // Sessions the section may read: the current one (when a cwd is given) plus any
+  // the test needs to give its Workspaces a "last used" time.
+  const byId: Record<string, { cwd?: string; updatedAt: number }> = { ...over.sessions }
+  if (over.currentCwd !== undefined) byId.current = { ...byId.current, cwd: over.currentCwd }
+  const sessionState = {
+    current: over.currentCwd === undefined ? undefined : 'current',
+    byId,
+  }
   const stub = {
     useScope: <T,>(selector: (snapshot: { value?: AtFileSettings }) => T): T => selector({ value }),
     useSessions: <T,>(selector: (snapshot: typeof sessionState) => T): T => selector(sessionState),
@@ -265,6 +271,26 @@ describe('AtFileSection', () => {
     expect(button(second.container, zh['settings.workspace']).getAttribute('aria-selected')).toBe('true')
     expect((second.container.querySelector('.dsh_atFile_workspaceSelect') as HTMLSelectElement).value).toBe('/work/two')
     second.root.unmount()
+  })
+
+  it('offers a cwd that is not a Workspace, and reads recency off the newest session', () => {
+    const older = { ...workspace('one', '/work/one', 'One'), sessionIds: ['s1'] }
+    const newer = { ...workspace('two', '/work/two', 'Two'), sessionIds: ['s2'] }
+    // A Workspace with no session at all falls back to its creation time.
+    const empty = { ...workspace('three', '/work/three', 'Three'), createdAt: '2026-01-01T00:00:00Z' }
+    const { root, container } = mount(<AtFileSection {...props({
+      workspaces: [older, newer, empty],
+      sessions: { s1: { updatedAt: 10 }, s2: { updatedAt: 99 } },
+      currentCwd: '/outside/x',
+    })} />)
+    click(button(container, zh['settings.workspace']))
+    const select = container.querySelector('.dsh_atFile_workspaceSelect') as HTMLSelectElement
+    const values = [...select.options].map(option => option.value)
+    // The current cwd leads when no Workspace claims it, then both Workspaces in
+    // snapshot order — recency decides the default, not the order.
+    expect(values).toEqual(['/outside/x', '/work/one', '/work/two', '/work/three'])
+    expect(select.value).toBe('/outside/x')
+    root.unmount()
   })
 
   it('reselects an available workspace when the previous choice disappears', () => {
