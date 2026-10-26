@@ -1454,6 +1454,75 @@ describe('dsh-atlas settings verbs', () => {
   })
 })
 
+describe('dsh-atlas slot faces', () => {
+  it('builds every slot face against the live services, not dead closures', async () => {
+    const inspected: string[][] = []
+    const booted = await boot({
+      atFileInspect: async (_sessionId, targets) => {
+        inspected.push([...targets])
+        return { ok: true as const, value: targets.map(relative => ({ relative, exists: true as const, kind: 'file' as const })) }
+      },
+      atFileSearch: async () => ({
+        ok: true as const,
+        value: [
+          { path: '/ws/a/README.md', relative: 'a/README.md', kind: 'file' as const },
+          { path: '/ws/b/README.md', relative: 'b/README.md', kind: 'file' as const },
+          { path: '/ws/AGENTS.md', relative: 'AGENTS.md', kind: 'file' as const },
+        ],
+      }),
+    })
+    const slots = booted.slotsRegister.mock.calls.map(call => call[0] as { id?: string; inject?: (id: string) => Record<string, unknown> })
+    const face = (id: string): Record<string, unknown> => {
+      const found = slots.find(entry => entry.id === id)
+      if (found?.inject === undefined) throw new Error(`no slot ${id}; the ids are ${slots.map(r => r.id).join(', ')}`)
+      return found.inject('session-1')
+    }
+
+    // The dock asks for an inspection of exactly the references it was handed.
+    const dock = face('atlas')
+    ;(dock.requestInspect as (targets: readonly string[]) => void)(['a/README.md', 'b/README.md'])
+    await settle()
+    expect(inspected).toEqual([['a/README.md', 'b/README.md']])
+    // The index the labels are judged against comes from the Host's own walk.
+    await registered(booted).candidates('session-1' as SessionId, { query: 'file:', position: 'leading', signal: new AbortController().signal })
+    await settle()
+
+    // The chip's label resolves through the index the inspection just filled: a
+    // name two paths answer to is refused rather than guessed (opening the wrong
+    // file is worse than an inert chip), a path passes through untouched, and a
+    // name only one path answers resolves to it.
+    const links = face('atlas-reference-links')
+    const resolveLabel = links.resolveLabel as (label: string) => string | undefined
+    expect(resolveLabel('README.md')).toBeUndefined()
+    expect(resolveLabel('a/README.md')).toBe('a/README.md')
+    expect(resolveLabel('AGENTS.md')).toBe('AGENTS.md')
+    expect(resolveLabel('nobody-knows')).toBe('nobody-knows')
+    expect(typeof links.actionFor).toBe('function')
+    expect(typeof links.repeatClick).toBe('function')
+    expect(typeof links.noteClick).toBe('function')
+
+    // The composer half of the same bridge carries the same three verbs.
+    const draft = face('atlas-draft-links')
+    expect(typeof draft.actionFor).toBe('function')
+    expect(typeof draft.repeatClick).toBe('function')
+    expect(typeof draft.noteClick).toBe('function')
+    expect(typeof draft.resolveSession).toBe('function')
+  })
+
+  it('a session with no client scope is a named refusal, not a crash', async () => {
+    const booted = await boot()
+    const slots = booted.slotsRegister.mock.calls.map(call => call[0] as { id?: string; inject?: (id: string) => unknown })
+    const scopeLess = booted.scopeSession
+    // Four faces resolve a scope per injection; with none, each says which session.
+    for (const id of ['atlas-mention-navigation', 'atlas-ad']) {
+      const entry = slots.find(candidate => candidate.id === id)
+      if (entry?.inject === undefined) continue
+      scopeLess.mockReturnValueOnce(undefined)
+      expect(() => entry.inject?.('session-x')).toThrow(/session "session-x" has no client scope/)
+    }
+  })
+})
+
 describe('dsh-atlas folder escape hatches', () => {
   it('lists the external scope and reports a failed directory listing', async () => {
     const external = vi.fn(async () => ({ ok: true as const, value: { canDiscover: true, roots: ['/ledger'], folders: ['/outside'] } }))
