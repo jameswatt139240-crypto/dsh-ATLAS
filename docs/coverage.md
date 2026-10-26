@@ -87,6 +87,20 @@ None of them is exempt — each has a test shape that would cover it, and this t
 | `src/client/draft-scope.ts` | 1 | 39 |
 | `src/client/history-frames.ts` | 1 | 353 |
 
+### 2b. Attempt log (dead ends, so they are not repeated)
+
+- **`source.rebuildRows` cannot be reached from `tests/source.spec.ts` today.** A probe that settles
+  `skill:` through `candidates()` (rows come back with `back` + two `skill-group` + `skill`) still
+  leaves `rebuildRows(session, 'skill:')` returning `undefined`, i.e. the settled cache it reads is not
+  the one the page filled. Either the harness's session identity differs from the one the cache is
+  keyed by, or the settled entry is replaced on settle. Needs 3–5 minutes with a debugger, not a
+  guess — the four lines (`src/client/source.ts:1668`, `1755`, `1766–1777`) stay open until then.
+- **`folder:` does not re-enter `fetchExternal`.** `src/client/source.ts:1331` fires it once while
+  building the page and the second ask inside TTL is served from `externalFetches`; advancing the
+  harness clock past `CATEGORY_TTL_MS` (30 s, verified) still shows one call, so the stale-while-revalidate
+  branch at `1145–1148` is driven from somewhere else (line `2090`, the scoped listing path). Covering
+  it needs a `@folder:<sub>` request with a listing seam, not a bare `@folder:`.
+
 ### 3. One measurement artifact (proved, not assumed)
 
 `src/files.ts:253` (`if (linked && !await isDirectory(child, signal)) continue`) is reported as
