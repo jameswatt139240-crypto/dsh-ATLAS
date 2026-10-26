@@ -1024,6 +1024,36 @@ describe('dsh-atlas atMention service and reference wiring', () => {
     expect(JSON.stringify(await plain.expandSkills(messages, signal))).not.toContain('BODY OF REVIEW')
   })
 
+  it('resolves an @atlas mention against the registry this context carries', async () => {
+    const signal = new AbortController().signal
+    const agent = { id: 'a1', session: { id: 's1', header: { cwd: '/work' } } } as never
+    const resolve = vi.fn(async () => 'BODY OF X')
+    const entry = {
+      id: 'git',
+      display: 'Git',
+      scopes: ['/work'],
+      verified: '2026-10-01',
+      provider: { id: 'git', display: 'Git', scopes: ['/work'], testedOn: [], list: async () => [], open: () => {}, resolve },
+    }
+    const ctx = {
+      get: (key: string) => (key === 'atlas' ? { registrations: () => [entry] } : undefined),
+    } as unknown as Context
+    const expansion = plugin.buildReferenceExpansion(
+      ctx,
+      agent,
+      plugin.Config({}),
+      () => ({ enabled: true, enableChats: true, enableSkills: true, enablePlugins: true } as AtFileSettings),
+    )
+    const messages = [
+      createUserMessage({ content: [{ type: 'text', text: 'see @atlas:git/x' }], source: { kind: 'user' } }),
+    ]
+    const injections = await expansion.expandAtlas(messages, signal)
+    // The mention travels as an injected context message, not as a rewrite, and the
+    // provider is found by id in this context's registry.
+    expect(resolve).toHaveBeenCalledWith({ id: 'x', title: 'x' }, expect.objectContaining({ sessionId: 's1' }))
+    expect(JSON.stringify(injections)).toContain('BODY OF X')
+  })
+
   it('shares one plugin inventory read between concurrent callers, then caches it', async () => {
     const ctx = new Context()
     let release: ((value: { entries: readonly { moduleName: string; enabled: boolean }[] }) => void) | undefined

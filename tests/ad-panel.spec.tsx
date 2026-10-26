@@ -95,6 +95,36 @@ describe('the side ad panel', () => {
     root.unmount()
   })
 
+  it('re-measures on a resize, on a scroll, and on its own tick', () => {
+    vi.useFakeTimers()
+    try {
+      const menu = store(state())
+      const menuEl = menuElement(rect(100, 300, 50, 400))
+      const host = document.createElement('div')
+      document.body.append(host)
+      const root = createRoot(host)
+      flushSync(() => { root.render(<MentionAd menu={menu as never} />) })
+      const first = panel().style.left
+      expect(panel().style.display).not.toBe('none')
+
+      // Move the menu and let each of the three triggers re-measure in turn: the
+      // panel must follow every time, because the menu can grow without a store
+      // event (loading -> categories -> results).
+      for (const [index, fire] of [
+        () => window.dispatchEvent(new Event('resize')),
+        () => document.dispatchEvent(new Event('scroll')),
+        () => vi.advanceTimersByTime(200),
+      ].entries()) {
+        menuEl.getBoundingClientRect = () => rect(100 + 100 * (index + 1), 300 + 100 * (index + 1), 50, 400)
+        fire()
+        expect(panel().style.left).not.toBe(first)
+      }
+      root.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('sits to the RIGHT of the menu while the list is still pending', () => {
     const menu = store(state())
     const host = document.createElement('div')
