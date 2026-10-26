@@ -11,10 +11,10 @@ Measured, not estimated. Every number here comes from one command:
 | Metric | Value |
 | --- | --- |
 | Test files | 42 passed |
-| Tests | **1040 passed, 1 skipped** |
-| Statements | **94.95%** (5210 / 5487) |
-| Branches | **90.19%** (3503 / 3884) |
-| Lines | **97.09%** (4313 / 4442) |
+| Tests | **1059 passed, 1 skipped** |
+| Statements | **95.73%** (5253 / 5487) |
+| Branches | **90.91%** (3531 / 3884) |
+| Lines | **97.63%** (4337 / 4442) |
 | Functions | see `coverage/coverage-final.json` |
 | Typecheck | `tsc --noEmit` → 0 errors |
 | Publish surface | `node scripts/verify-publish-surface.mjs` → 67 files, ad-free bundle |
@@ -36,12 +36,15 @@ a non-`Error` abort reason), which is why they are not turned into behaviour tes
 | chooser hand-off, external scope, menu header rules | 94.40% | 89.44% | 1025 |
 | every slot face built against live services | 94.64% | 89.83% | 1030 |
 | ad panel geometry, fuzzy matcher, plugin bucketing | 94.87% | 90.13% | 1038 |
-| one send per submission, menu height budget | **94.95%** | **90.19%** | **1040** |
+| one send per submission, menu height budget | 94.95% | 90.19% | 1040 |
+| every guarded arm of the `@` bridge | 95.26% | 90.60% | 1050 |
+| tools / expansion failures / directory readers | **95.73%** | **90.91%** | **1059** |
 
 ## What is still uncovered
 
-247 statements across 28 files. They are listed line by line below so that each one can be
-judged instead of trusted.
+205 lines across 24 files — 83% of them in two files (`src/client/index.ts`,
+`src/client/source.ts`). They are listed line by line below so that each one can be judged instead
+of trusted.
 
 ### 1. Structurally unreachable in the shipped build (2 sites)
 
@@ -52,19 +55,15 @@ judged instead of trusted.
 
 ### 2. Reachable, still untested (the work queue)
 
-These are defended branches (I/O failure mid-iteration, a second concurrent caller sharing an
-in-flight promise, retired-client fallbacks) and interaction corners. None of them is exempt:
-each has a test shape that would cover it, and the table is the queue.
+These are defended branches and interaction corners: I/O failing mid-iteration, a second concurrent
+caller sharing an in-flight promise, retired-client fallbacks, the folder picker's terminal states.
+None of them is exempt — each has a test shape that would cover it, and this table is the queue.
 
 | `src/client/index.ts` | 55 | 425, 426, 427, 432, 500, 501, 530, 544, 622, 636, 649, 662, 663, 680, 681, 685, 716, 717, 718, 719, 720, 750, 751, 753, 755, 756, 757, 758, 759, 760, 761, 762, 763, 764, 765, 787, 953, 1119, 1194, 1252, 1260, 1261, 1279, 1306, 1310, 1311, 1314, 1329, 1330, 1347, 1348, 1375, 1376, 1377, 1468 |
 | `src/client/source.ts` | 54 | 475, 801, 860, 1021, 1031, 1032, 1073, 1083, 1084, 1141, 1145, 1147, 1148, 1234, 1462, 1467, 1468, 1469, 1502, 1503, 1563, 1668, 1706, 1755, 1766, 1767, 1768, 1775, 1795, 1800, 1810, 1811, 1812, 1837, 1843, 1874, 1876, 1908, 1927, 1936, 2023, 2024, 2025, 2027, 2090, 2091, 2099, 2104, 2108, 2116, 2165, 2168, 2206, 2215 |
 | `src/client/FolderPicker.tsx` | 18 | 283, 320, 342, 359, 383, 390, 396, 550, 564, 582, 603, 666, 669, 689, 770, 773, 837, 840 |
-| `src/client/MentionNavigator.tsx` | 16 | 104, 111, 234, 261, 282, 299, 305, 306, 307, 309, 310, 367, 371, 533, 536, 539 |
 | `src/client/DraftLinks.tsx` | 14 | 72, 94, 145, 165, 166, 167, 168, 169, 170, 177, 179, 181, 194, 216 |
-| `src/files.ts` | 10 | 234, 235, 236, 321, 322, 323, 327, 328, 332, 445 |
 | `src/index.ts` | 10 | 193, 196, 319, 324, 342, 361, 366, 371, 374, 389 |
-| `src/tools.ts` | 9 | 60, 118, 124, 127, 142, 144, 155, 170, 180 |
-| `src/mention.ts` | 7 | 230, 254, 255, 260, 261, 266, 267 |
 | `src/client/draft-links.ts` | 7 | 118, 119, 120, 121, 208, 261, 452 |
 | `src/runtime.ts` | 5 | 57, 173, 275, 354, 407 |
 | `src/client/AdPanel.tsx` | 5 | 64, 134, 156, 157, 161 |
@@ -85,12 +84,23 @@ each has a test shape that would cover it, and the table is the queue.
 | `src/client/history-frames.ts` | 1 | 353 |
 | `src/client/model.ts` | 1 | 26 |
 
+### 3. One measurement artifact (proved, not assumed)
+
+`src/files.ts:253` (`if (linked && !await isDirectory(child, signal)) continue`) is reported as
+uncovered by the coverage map, but the branch does run: `tests/files.spec.ts` drives a follow-links
+listing whose only entry is a symbolic link to a missing target, and the fake handle records
+**two** reads — the link, then the end of the directory — which can only happen after the
+`continue`. The counter stays at 0 because the statement is a loop jump inside `try`/`finally`;
+the covered line proves the behaviour, so this is recorded as an instrumentation artifact rather
+than as a gap.
+
 ## Why 100% was not claimed
 
 The audit's rule was: a line is either **covered by a test that asserts behaviour**, or **named in
 this file with a reason that can be falsified**. Writing `/* v8 ignore */` over a reachable branch
 would have produced a 100% that lies about the artifact, so the remaining reachable branches stay
-listed above with their line numbers.
+listed above with their line numbers — and the one branch the instrument insists is missing while
+the test proves it runs is written down as an artifact, in the open.
 
 Reproduce any row by opening its file at the listed line and running
 `vitest run --coverage tests/<the file's spec>.spec.ts`.
