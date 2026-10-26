@@ -201,6 +201,19 @@ describe('a global category page and a caller that walks away', () => {
     expect(listPlugins).toHaveBeenCalledTimes(3)
   })
 
+  it('degrades the optional categories in silence while the files still answer', async () => {
+    const h = harness({
+      search: vi.fn(async () => [{ path: '/w/vi.ts', relative: 'vi.ts', kind: 'file' as const }]),
+      listSkills: vi.fn(async () => { throw new Error('skills down') }),
+      listChats: vi.fn(async () => { throw new Error('chats down') }),
+      listPlugins: vi.fn(async () => { throw new Error('plugins down') }),
+    })
+    const rows = await ask(h.source, 'vi')
+    // Files answered, so the page is not empty and carries no failure notice.
+    expect(rows.some(row => row.name === 'vi.ts')).toBe(true)
+    expect(rows.some(row => row.name.includes('down'))).toBe(false)
+  })
+
   it('reports a failed index on the mixed page instead of "no files match"', async () => {
     const search = vi.fn(async () => { throw new Error('index down') })
     const listSkills = vi.fn(async () => { throw new Error('skills down') })
@@ -271,6 +284,56 @@ describe('pure helpers of the source', () => {
     expect(pluginScope('@deepseek-ai/dsh-atlas')).toBe('@deepseek-ai')
     expect(pluginScope('@bare')).toBe('@bare')
     expect(pluginScope('dsh-atlas')).toBe('其他')
+  })
+})
+
+describe('browsing a directory in the draft', () => {
+  const walk = (source: { candidates: Function }, query: string) =>
+    source.candidates(session('s1'), { query, position: 'leading', signal: new AbortController().signal }) as Promise<{ name: string; mentionKind?: string }[]>
+
+  it('walks nothing when the capability is absent, and says so when it is empty', async () => {
+    // No folder capability at all: a path token answers with no rows rather than
+    // pretending the directory exists and is empty.
+    expect(await walk(harness({ list: undefined }).source, '/')).toEqual([])
+
+    const empty = harness({ list: vi.fn(async (_id: SessionId, path: string) => ({ path, entries: [] })) })
+    expect((await walk(empty.source, '/'))[0]?.mentionKind).toBe('browse-note')
+    expect((await walk(empty.source, '/'))[0]?.name).toContain('空')
+  })
+
+  it('turns a failing listing into a note, and a cancelled one into silence', async () => {
+    const broken = harness({ list: vi.fn(async () => { throw new Error('disk gone') }) })
+    const rows = await walk(broken.source, '/')
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.mentionKind).toBe('browse-note')
+
+    // A caller that walked away is not an error to report.
+    const controller = new AbortController()
+    const cancelled = harness({
+      list: vi.fn(async () => {
+        controller.abort()
+        throw new DOMException('aborted', 'AbortError')
+      }),
+    })
+    const quiet = await cancelled.source.candidates(session('s1'), {
+      query: '/',
+      position: 'leading',
+      signal: controller.signal,
+    })
+    expect(quiet).toEqual([])
+  })
+
+  it('notes a listing that was cut short after the entries it did return', async () => {
+    const long = harness({
+      list: vi.fn(async (_id: SessionId, path: string) => ({
+        path,
+        entries: [{ name: 'a.ts', kind: 'file' as const }],
+        truncated: true,
+      })),
+    })
+    const rows = await walk(long.source, '/')
+    expect(rows.map(row => row.mentionKind)).toEqual(['browse-file', 'browse-note'])
+    expect(rows[0]?.name).toBe('a.ts')
   })
 })
 
