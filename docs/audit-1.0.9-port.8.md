@@ -8,10 +8,10 @@ command beside it; nothing here is carried forward from an earlier run.
 | Gate | Command | Result |
 |---|---|---|
 | Typecheck | `./node_modules/.bin/tsc --noEmit` | 0 errors |
-| Tests | `./node_modules/.bin/vitest run` | **1133 passed, 1 skipped** (43 files) |
+| Tests | `./node_modules/.bin/vitest run` | **1135 passed, 1 skipped** (43 files) |
 | Build | `npm run build` | `lib/index.js` 849.6 kB, `lib/client.js` 1.1 MB, banner `WITHOUT ads` |
 | Publish surface | `npm run verify:publish` | `ok — 67 files, no internal artifacts, ad-free bundle` |
-| Coverage | `vitest run --coverage` | statements **98.34%** (5396/5487), branches **93.94%** (3649/3884), lines **99.34%** (4413/4442) |
+| Coverage | `vitest run --coverage` | statements **98.41%** (5400/5487), branches **94.00%** (3651/3884), lines **99.41%** (4416/4442) |
 
 The build is deterministic: rebuilding leaves `git status` clean for `lib/`.
 
@@ -47,7 +47,7 @@ The build is deterministic: rebuilding leaves `git status` clean for `lib/`.
 
 ## 3. Coverage: what 98.34% actually means
 
-93 statements over 17 modules remain (84 unique lines). They are listed line by line in
+87 statements over 16 modules remain. They are listed line by line in
 [`coverage.md`](./coverage.md), split into three kinds, and **the gap is not dressed up as a
 waiver**:
 

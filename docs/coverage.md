@@ -11,12 +11,12 @@ Measured, not estimated. Every number here comes from one command:
 | Metric | Value |
 | --- | --- |
 | Test files | 43 passed |
-| Tests | **1133 passed, 1 skipped** |
-| Statements | **98.34%** (5396 / 5487) |
-| Branches | **93.94%** (3649 / 3884) |
-| Lines | **99.34%** (4413 / 4442) |
+| Tests | **1135 passed, 1 skipped** |
+| Statements | **98.41%** (5400 / 5487) |
+| Branches | **94.00%** (3651 / 3884) |
+| Lines | **99.41%** (4416 / 4442) |
 | Functions | see `coverage/coverage-final.json` |
-| Uncovered | **91 statements over 17 files** (unique lines: 84) |
+| Uncovered | **87 statements over 16 files** (unique lines: 81) |
 | Typecheck | `tsc --noEmit` → 0 errors |
 | Publish surface | `node scripts/verify-publish-surface.mjs` → 67 files, ad-free bundle |
 
@@ -68,7 +68,7 @@ caller sharing an in-flight promise, retired-client fallbacks, the folder picker
 | File | Uncovered | Lines |
 |---|---|---|
 | `src/client/index.ts` | 21 | 425, 426, 427, 432, 717, 750, 758, 760, 763, 787, 953, 1119, 1194, 1252, 1260, 1261, 1279, 1375, 1376, 1377, 1468 |
-| `src/client/source.ts` | 21 | 860, 1141, 1147, 1148, 1234, 1563, 1668, 1706, 1755, 1767, 1775, 1811, 1837, 1843, 1874, 1908, 1936, 2027, 2091, 2099, 2215 |
+| `src/client/source.ts` | 18 | 860, 1234, 1563, 1668, 1706, 1755, 1767, 1775, 1811, 1837, 1843, 1874, 1908, 1936, 2027, 2091, 2099, 2215 |
 | `src/client/FolderPicker.tsx` | 13 | 283, 320, 342, 359, 383, 390, 396, 564, 582, 603, 666, 669, 689 |
 | `src/runtime.ts` | 5 | 57, 173, 275, 354, 407 |
 | `src/client/DraftLinks.tsx` | 5 | 94, 168, 169, 170, 216 |

@@ -102,6 +102,60 @@ function harness(overrides: Partial<Parameters<typeof createMentionSource>[0]> =
   }
 }
 
+describe('an external refresh that fails', () => {
+  it('drops the entry so the next read tries again instead of trusting a dead one', async () => {
+    // The stale scope still answers (that is the point of serving it), but when its
+    // background refresh REJECTS the cache entry must go: otherwise every later
+    // read within the TTL would hand back a scope nobody could refresh.
+    let calls = 0
+    const external = (async () => {
+      calls += 1
+      if (calls === 2) throw new Error('ledger down')
+      return { canDiscover: true, roots: [], folders: ['/outside/repo'] }
+    }) as never
+    const h = harness({ external })
+    const ask = (): Promise<{ length: number } | unknown> =>
+      h.source.candidates(session('s1'), { query: 'folder:do', position: 'leading', signal: new AbortController().signal })
+    await ask()
+    h.tick(CATEGORY_TTL_MS + 1)
+    // Stale read answers from the settled scope while the refresh fails in the dark.
+    await expect(ask()).resolves.toBeDefined()
+    await Promise.resolve()
+    await Promise.resolve()
+    h.tick(CATEGORY_TTL_MS + 1)
+    await ask()
+    expect(calls).toBe(3)
+  })
+})
+
+describe('an external scope that is still loading when it goes stale', () => {
+  it('aborts the abandoned request instead of leaving it in flight', async () => {
+    // The first scope read hangs. Once it is older than the TTL a newer request
+    // replaces it, and the abandoned one is aborted rather than left holding a
+    // socket: a ledger that is still loading is exactly the case a TTL expiry is
+    // meant to break.
+    const signals: AbortSignal[] = []
+    let release: (value: unknown) => void = () => {}
+    const external = (async (_id: SessionId, signal?: AbortSignal) => {
+      signals.push(signal as AbortSignal)
+      if (signals.length === 1) return new Promise(resolve => { release = resolve as never })
+      return { canDiscover: true, roots: [], folders: [] }
+    }) as never
+    const h = harness({ external })
+    const ask = (): Promise<unknown> =>
+      h.source.candidates(session('s1'), { query: 'folder:do', position: 'leading', signal: new AbortController().signal })
+    void ask()
+    await Promise.resolve()
+    h.tick(CATEGORY_TTL_MS + 1)
+    await ask()
+    expect(signals).toHaveLength(2)
+    expect(signals[0]?.aborted).toBe(true)
+    // Letting the abandoned request finish must not undo the newer entry.
+    release({ canDiscover: true, roots: [], folders: [] })
+    await Promise.resolve()
+  })
+})
+
 describe('a category page that is still loading when it goes stale', () => {
   const ask = (source: { candidates: Function }, query: string) =>
     source.candidates(session('s1'), { query, position: 'leading', signal: new AbortController().signal }) as Promise<{ name: string }[]>
