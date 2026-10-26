@@ -275,6 +275,93 @@ describe('dsh-atlas host composition', () => {
     }
   })
 
+  it('answers a switched-off or unaddressed session without touching the disk', async () => {
+    // Three guards the Host must never paper over: the feature being off, a session
+    // with no workspace directory, and a path outside it. Each answers with data or a
+    // reason instead of reaching the filesystem.
+    const off = new Context()
+    const offFiber = await mount(off, undefined, () => ({
+      enabled: false,
+      ignoreFiles: [...plugin.DEFAULT_IGNORE_FILES],
+      workspaceIgnoreFiles: [],
+      ignorePastedMentions: true,
+      enableSkills: true,
+      enableChats: true,
+      enablePlugins: true,
+      candidateLimit: 50,
+    }))
+    try {
+      const runtime = off.get('atFile') as AtFileRuntime
+      const agent = agentWith(process.cwd())
+      const signal = new AbortController().signal
+      await expect(runtime.search(agent, signal)).rejects.toThrow(/disabled/)
+      await expect(runtime.list(agent, '', '', signal)).rejects.toThrow(/disabled/)
+      await expect(runtime.browse(agent, '', signal)).rejects.toThrow(/disabled/)
+      await expect(runtime.recentFolders(agent, signal)).rejects.toThrow(/disabled/)
+    } finally {
+      await offFiber.dispose()
+    }
+
+    const ctx = new Context()
+    const fiber = await mount(ctx)
+    try {
+      const runtime = ctx.get('atFile') as AtFileRuntime
+      const signal = new AbortController().signal
+      const nowhere = agentWith(undefined)
+      // No workspace directory: a reference cannot exist, and no git state did.
+      expect(await runtime.inspect(nowhere, ['a.ts', 'b/c.ts'], signal)).toEqual([
+        { relative: 'a.ts', exists: false },
+        { relative: 'b/c.ts', exists: false },
+      ])
+      // The repository read belongs to the `atlas` namespace, not to at-file: the
+      // client's `@git` menu provider reaches it through `remote.atlas`.
+      const atlas = ctx.get('atlas') as { gitChanges: (agent: Agent, signal: AbortSignal) => Promise<readonly unknown[]> }
+      expect(await atlas.gitChanges(nowhere, signal)).toEqual([])
+      await expect(runtime.list(nowhere, '', '', signal)).rejects.toThrow(/no workspace directory/)
+      await expect(runtime.browse(nowhere, '', signal)).rejects.toThrow(/no workspace directory/)
+    } finally {
+      await fiber.dispose()
+    }
+  })
+
+  it('exposes the @ seam registry as the atlas service', async () => {
+    const ctx = new Context()
+    const ctxFiber = await mount(ctx)
+    try {
+      const registry = ctx.get('atlas') as {
+        runtime: (signal: AbortSignal) => { version: string }
+        registrations: () => readonly { id: string }[]
+        register: (registration: { id: string }) => () => void
+      }
+      expect(registry).toBeDefined()
+      // The built-in `@git` source is registered at boot through the same seam a
+      // third-party plugin uses, so the seam starts non-empty by design.
+      expect(registry.registrations().map(entry => entry.id)).toContain('git')
+      const before = registry.registrations().length
+      const dispose = registry.register({
+        id: 'demo',
+        display: 'Demo',
+        resolve: () => undefined,
+        scopes: [],
+        testedOn: ['0.2.0-rc.2'],
+      })
+      expect(registry.registrations().map(entry => entry.id)).toContain('demo')
+      expect(registry.registrations()).toHaveLength(before + 1)
+      dispose()
+      expect(registry.registrations().map(entry => entry.id)).not.toContain('demo')
+      expect(registry.registrations()).toHaveLength(before)
+      // The version gate reports only what the Host could establish: with no
+      // version source attached it answers an empty record rather than a guess,
+      // and an aborted caller gets nothing at all.
+      expect(registry.runtime(new AbortController().signal)).toEqual({})
+      const aborted = new AbortController()
+      aborted.abort()
+      expect(() => registry.runtime(aborted.signal)).toThrow()
+    } finally {
+      await ctxFiber.dispose()
+    }
+  })
+
   it('disposes the service with its fiber', async () => {
     const ctx = new Context()
     const fiber = await mount(ctx)
