@@ -1718,6 +1718,9 @@ describe('recent files', () => {
   it('derives the workspace from an absolute path and its relative', () => {
     expect(workspaceFromAbsolute('E:\\ws\\src\\view.ts', 'src/view.ts')).toBe('E:/ws')
     expect(workspaceFromAbsolute('/work/README.md', 'README.md')).toBe('/work')
+    // An absolute path that does not END with the relative one is returned as it
+    // stands: there is no prefix to strip.
+    expect(workspaceFromAbsolute('E:/ws/other.md', 'src/view.ts')).toBe('E:/ws/other.md')
   })
 
   it('keys a referenced path the same way whichever separator it was typed with', () => {

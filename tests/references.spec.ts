@@ -37,6 +37,25 @@ function chatMention(sessionId: string, label: string): string {
 const SIGNAL = new AbortController().signal
 const agentStub = { session: { header: {} } } as never
 
+describe('a message that carries more than prose', () => {
+  it('reads the text blocks and steps over the rest', async () => {
+    // A user turn may hold an image part; only text carries mentions, and a
+    // non-text block must be stepped over rather than parsed.
+    const mixed = createUserMessage({
+      content: [
+        { type: 'image', source: { type: 'base64', mediaType: 'image/png', data: '' } },
+        { type: 'text', text: 'see @skill:blender-modeling and @atlas:git/README.md' },
+      ],
+      source: { kind: 'user' },
+    } as never)
+    // `isKnown` names the skills this profile has; the body is loaded only for
+    // the ones it knows.
+    const expansions = await expandSkillMentions([mixed], () => true, SIGNAL, async () => 'body')
+    expect(expansions).toHaveLength(1)
+    expect(JSON.stringify(expansions[0])).toContain('body')
+  })
+})
+
 describe('escapeReferenceAttribute', () => {
   it('escapes the four XML-like attribute characters', () => {
     expect(escapeReferenceAttribute('a&b"c<d>e')).toBe('a&amp;b&quot;c&lt;d&gt;e')

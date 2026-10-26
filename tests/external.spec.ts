@@ -86,6 +86,16 @@ describe('external access', () => {
   })
 })
 
+describe('allowsExternal', () => {
+  it('refuses an empty path, and accepts a known or a rooted one', () => {
+    // Nothing can be outside the workspace when it has no path at all.
+    expect(allowsExternal({ canDiscover: false, roots: ['/work'], known: [] }, '')).toBe(false)
+    expect(allowsExternal({ canDiscover: false, roots: ['/work'], known: ['/work/seen.md'] }, '/work/seen.md')).toBe(true)
+    expect(allowsExternal({ canDiscover: false, roots: ['/work'], known: [] }, '/work/a.md')).toBe(true)
+    expect(allowsExternal({ canDiscover: false, roots: ['/work'], known: [] }, '/elsewhere/a.md')).toBe(false)
+  })
+})
+
 describe('external ledger', () => {
   it('normalizes: drops blanks, deduplicates by canonical key, newest first', () => {
     const rows = normalizeExternalRefs([
