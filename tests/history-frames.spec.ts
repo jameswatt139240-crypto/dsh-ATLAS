@@ -99,6 +99,16 @@ describe('reply frames', () => {
     const frames = buildFrames(Object.keys(table), key => table[key] as never, 'turn')
     expect(frames.map(frame => frame.key)).toEqual(['u1'])
   })
+
+  it('gives a system turn no stop when its only answer carries no prose', () => {
+    // The turn has no prompt node, so it would stop on its last answer — but that
+    // answer is blank (a cancelled turn, or pure tool plumbing), and a stop with
+    // nothing to read is worse than no stop.
+    const table: Record<string, unknown> = {
+      a1: assistantNode([{ kind: 'text', text: '   ' }], 7),
+    }
+    expect(buildFrames(Object.keys(table), key => table[key] as never, 'turn')).toEqual([])
+  })
 })
 
 describe('collapse', () => {

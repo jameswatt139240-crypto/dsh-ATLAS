@@ -152,6 +152,14 @@ describe('rankRecentFolders', () => {
     expect(ranked.map(row => row.reason)).toEqual(['child'])
   })
 
+  it('sorts a child-tier folder by its tier rather than by arrival order', () => {
+    const ranked = rankRecentFolders([folder('E:/Far/Away'), folder('E:/Eason/Rust')], cwd)
+    expect(ranked.map(row => [row.name, row.reason])).toEqual([
+      ['Rust', 'child'],
+      ['Away', 'recent'],
+    ])
+  })
+
   it('treats everything as merely recent when the session has no workspace', () => {
     const ranked = rankRecentFolders([folder('E:/A'), folder('E:/B')], '')
     expect(ranked.map(row => row.reason)).toEqual(['recent', 'recent'])

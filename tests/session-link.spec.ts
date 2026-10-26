@@ -20,6 +20,11 @@ describe('the session link grammar', () => {
     // A JSON empty string and a JSON number are both "not a session id".
     expect(decodeSessionUri(payload('""'))).toBeUndefined()
     expect(decodeSessionUri(payload('123'))).toBeUndefined()
+    // Not JSON at all, and a payload that decodes to an id but is not spelled the
+    // way this host spells it (padded base64) — both are refused.
+    expect(decodeSessionUri(payload('not json'))).toBeUndefined()
+    const padded = `dsh-session:${Buffer.from(JSON.stringify('sess-a'), 'utf8').toString('base64')}`
+    expect(decodeSessionUri(padded)).toBeUndefined()
     // The round trip of a real id still answers.
     expect(decodeSessionUri(uriOf('sess-a'))).toBe('sess-a')
   })

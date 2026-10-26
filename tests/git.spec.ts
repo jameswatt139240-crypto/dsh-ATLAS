@@ -93,6 +93,18 @@ describe('readGitDiff', () => {
     expect(diff).toContain('+hello')
   })
 
+  it('diffs a tracked, committed file against its committed state', async () => {
+    const root = repository()
+    execFileSync('git', ['add', 'fresh.txt'], { cwd: root })
+    execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'one'], { cwd: root })
+    writeFileSync(join(root, 'fresh.txt'), 'hello there\n')
+    const diff = await readGitDiff(root, 'fresh.txt', signal())
+    // A tracked file goes through `git diff`, so both sides appear — unlike the
+    // untracked case, which is a /dev/null comparison.
+    expect(diff).toContain('-hello')
+    expect(diff).toContain('+hello there')
+  })
+
   it('answers nothing for a path that git has never heard of', async () => {
     expect(await readGitDiff(repository(), 'absent.txt', signal())).toBeUndefined()
   })
