@@ -741,6 +741,107 @@ describe('dsh-atlas atMention service and reference wiring', () => {
     }
   })
 
+  it('frees the skill promise once it settles, so a later read asks again', async () => {
+    const ctx = new Context()
+    // A gate the test opens itself: the first two reads join one in-flight promise.
+    let release: (value: readonly unknown[]) => void = () => {}
+    const gate = new Promise<readonly unknown[]>((resolve) => { release = resolve })
+    const list = vi.fn(async () => await gate)
+    ctx.provide('skills', { list, get: vi.fn() })
+    const fiber = await mount(ctx)
+    try {
+      const runtime = ctx.get('atMention') as AtMentionRuntime
+      const agent = { id: 'skill-join', session: { header: { cwd: '/work' } } } as never
+      const signal = new AbortController().signal
+      const first = runtime.listSkills(agent, signal)
+      const second = runtime.listSkills(agent, signal)
+      release([{ name: 'blender-modeling', description: 'd', source: 'custom' }])
+      await expect(Promise.all([first, second])).resolves.toBeTruthy()
+      // The TTL cache would answer the third read; the in-flight entry must not.
+      await runtime.listSkills(agent, signal)
+      expect(list).toHaveBeenCalledTimes(1)
+      // A different agent skips the TTL cache and proves the entry was released.
+      await runtime.listSkills({ id: 'skill-join-2', session: { header: { cwd: '/work' } } } as never, signal)
+      expect(list).toHaveBeenCalledTimes(2)
+    } finally {
+      await fiber.dispose()
+    }
+  })
+
+  it('frees the skill promise when discovery fails, so the next read retries', async () => {
+    const ctx = new Context()
+    let attempt = 0
+    const list = vi.fn(async () => {
+      attempt += 1
+      if (attempt === 1) throw new Error('boom')
+      return [{ name: 'blender-modeling', description: 'd', source: 'custom' }]
+    })
+    ctx.provide('skills', { list, get: vi.fn() })
+    const fiber = await mount(ctx)
+    try {
+      const runtime = ctx.get('atMention') as AtMentionRuntime
+      const agent = { id: 'skill-retry', session: { header: { cwd: '/work' } } } as never
+      const signal = new AbortController().signal
+      await expect(runtime.listSkills(agent, signal)).rejects.toThrow('boom')
+      await expect(runtime.listSkills(agent, signal)).resolves.toHaveLength(1)
+      expect(list).toHaveBeenCalledTimes(2)
+    } finally {
+      await fiber.dispose()
+    }
+  })
+
+  it('answers chats and plugins only when their services are there and switched on', async () => {
+    const ctx = new Context()
+    const listCandidates = vi.fn(async () => [{ sessionId: 'sess-a', label: 'Yesterday', createdAt: 5 }])
+    const inventory = vi.fn(async () => ({ entries: [{ moduleName: 'dsh-atlas', enabled: true }] }))
+    ctx.provide('sessionReferenceResolver', { listCandidates })
+    ctx.provide('pluginInventory', { list: inventory })
+    const fiber = await mount(ctx)
+    try {
+      const runtime = ctx.get('atMention') as AtMentionRuntime
+      const agent = { id: 'chat-agent', session: { header: { cwd: '/work' } } } as never
+      const signal = new AbortController().signal
+      const [a, b] = await Promise.all([
+        runtime.listChats(agent, 'yes', 5, signal),
+        runtime.listChats(agent, 'yes', 5, signal),
+      ])
+      expect(a).toEqual(b)
+      expect(listCandidates).toHaveBeenCalledTimes(1)
+      expect(await runtime.listPlugins(signal)).toEqual([{ entryId: 'dsh-atlas', moduleName: 'dsh-atlas', enabled: true }])
+      // The second read is answered from the plugin cache, not from the inventory.
+      await runtime.listPlugins(signal)
+      expect(inventory).toHaveBeenCalledTimes(1)
+    } finally {
+      await fiber.dispose()
+    }
+  })
+
+  it('answers nothing for chats and plugins when they are switched off', async () => {
+    const ctx = new Context()
+    const listCandidates = vi.fn(async () => [{ sessionId: 'sess-a', label: 'Yesterday', createdAt: 5 }])
+    const inventory = vi.fn(async () => ({ entries: [{ moduleName: 'dsh-atlas', enabled: true }] }))
+    ctx.provide('sessionReferenceResolver', { listCandidates })
+    ctx.provide('pluginInventory', { list: inventory })
+    const fiber = await mount(ctx, undefined, () => ({
+      enabled: true,
+      enableChats: false,
+      enablePlugins: false,
+      ignoreFiles: [],
+      workspaceIgnoreFiles: [],
+    }))
+    try {
+      const runtime = ctx.get('atMention') as AtMentionRuntime
+      const agent = { id: 'chat-off', session: { header: { cwd: '/work' } } } as never
+      const signal = new AbortController().signal
+      expect(await runtime.listChats(agent, '', 5, signal)).toEqual([])
+      expect(await runtime.listPlugins(signal)).toEqual([])
+      expect(listCandidates).not.toHaveBeenCalled()
+      expect(inventory).not.toHaveBeenCalled()
+    } finally {
+      await fiber.dispose()
+    }
+  })
+
   it('caches skill discovery on the host for a TTL', async () => {
     const ctx = new Context()
     const list = vi.fn(async () => [{ name: 'blender-modeling', description: 'd', source: 'custom' }])
