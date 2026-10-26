@@ -11,9 +11,9 @@ Measured, not estimated. Every number here comes from one command:
 | Metric | Value |
 | --- | --- |
 | Test files | 42 passed |
-| Tests | **1085 passed, 1 skipped** |
-| Statements | **96.55%** (5298 / 5487) |
-| Branches | **92.14%** (3579 / 3884) |
+| Tests | **1087 passed, 1 skipped** |
+| Statements | **96.61%** (5301 / 5487) |
+| Branches | **92.22%** (3582 / 3884) |
 | Lines | **98.13%** (4359 / 4442) |
 | Functions | see `coverage/coverage-final.json` |
 | Typecheck | `tsc --noEmit` → 0 errors |
@@ -43,11 +43,12 @@ a non-`Error` abort reason), which is why they are not turned into behaviour tes
 | cache abandonment + pick texts | 96.30% | 91.60% | 1075 |
 | folder browser terminal states | 96.46% | 91.99% | 1079 |
 | cancellation after every category fetch | 96.50% | 92.04% | 1081 |
-| picker: create form + filtered note | **96.55%** | **92.14%** | **1085** |
+| picker: create form + filtered note | 96.55% | 92.14% | 1085 |
+| non-text parts, empty path, non-suffix path | **96.61%** | **92.22%** | **1087** |
 
 ## What is still uncovered
 
-166 lines across 24 files — 52% of them in two files (`src/client/index.ts`,
+163 lines across 22 files — 53% of them in two files (`src/client/index.ts`,
 `src/client/source.ts`). They are listed line by line below so that each one can be judged instead
 of trusted.
 
@@ -73,21 +74,19 @@ None of them is exempt — each has a test shape that would cover it, and this t
 | `src/client/DraftLinks.tsx` | 5 | 94, 168, 169, 170, 216 |
 | `src/client/FrameCursor.tsx` | 5 | 382, 458, 554, 576, 589 |
 | `src/client/FolderTab.tsx` | 4 | 105, 110, 136, 168 |
-| `src/references.ts` | 3 | 72, 172, 283 |
 | `src/client/FilesDock.tsx` | 3 | 122, 127, 152 |
 | `src/client/MenuIcons.tsx` | 3 | 78, 129, 141 |
 | `src/client/SettingsSection.tsx` | 3 | 163, 164, 186 |
 | `src/client/icons.tsx` | 3 | 170, 251, 252 |
 | `src/git.ts` | 2 | 62, 146 |
 | `src/recent-folders.ts` | 2 | 144, 171 |
+| `src/references.ts` | 2 | 172, 283 |
 | `src/client/ReferenceLinks.tsx` | 2 | 286, 356 |
 | `src/client/draft-links.ts` | 2 | 121, 452 |
 | `src/client/session-link.ts` | 2 | 49, 95 |
 | `src/contract.ts` | 1 | 34 |
-| `src/external.ts` | 1 | 71 |
 | `src/client/draft-scope.ts` | 1 | 39 |
 | `src/client/history-frames.ts` | 1 | 353 |
-| `src/client/model.ts` | 1 | 26 |
 
 ### 3. One measurement artifact (proved, not assumed)
 
