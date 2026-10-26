@@ -11,10 +11,10 @@ Measured, not estimated. Every number here comes from one command:
 | Metric | Value |
 | --- | --- |
 | Test files | 42 passed |
-| Tests | **1059 passed, 1 skipped** |
-| Statements | **95.73%** (5253 / 5487) |
-| Branches | **90.91%** (3531 / 3884) |
-| Lines | **97.63%** (4337 / 4442) |
+| Tests | **1065 passed, 1 skipped** |
+| Statements | **96.04%** (5270 / 5487) |
+| Branches | **91.37%** (3549 / 3884) |
+| Lines | **97.79%** (4344 / 4442) |
 | Functions | see `coverage/coverage-final.json` |
 | Typecheck | `tsc --noEmit` → 0 errors |
 | Publish surface | `node scripts/verify-publish-surface.mjs` → 67 files, ad-free bundle |
@@ -38,11 +38,12 @@ a non-`Error` abort reason), which is why they are not turned into behaviour tes
 | ad panel geometry, fuzzy matcher, plugin bucketing | 94.87% | 90.13% | 1038 |
 | one send per submission, menu height budget | 94.95% | 90.19% | 1040 |
 | every guarded arm of the `@` bridge | 95.26% | 90.60% | 1050 |
-| tools / expansion failures / directory readers | **95.73%** | **90.91%** | **1059** |
+| tools / expansion failures / directory readers | 95.73% | 90.91% | 1059 |
+| draft caret + pointer edges | **96.04%** | **91.37%** | **1065** |
 
 ## What is still uncovered
 
-205 lines across 24 files — 83% of them in two files (`src/client/index.ts`,
+191 lines across 24 files — 57% of them in two files (`src/client/index.ts`,
 `src/client/source.ts`). They are listed line by line below so that each one can be judged instead
 of trusted.
 
@@ -62,11 +63,10 @@ None of them is exempt — each has a test shape that would cover it, and this t
 | `src/client/index.ts` | 55 | 425, 426, 427, 432, 500, 501, 530, 544, 622, 636, 649, 662, 663, 680, 681, 685, 716, 717, 718, 719, 720, 750, 751, 753, 755, 756, 757, 758, 759, 760, 761, 762, 763, 764, 765, 787, 953, 1119, 1194, 1252, 1260, 1261, 1279, 1306, 1310, 1311, 1314, 1329, 1330, 1347, 1348, 1375, 1376, 1377, 1468 |
 | `src/client/source.ts` | 54 | 475, 801, 860, 1021, 1031, 1032, 1073, 1083, 1084, 1141, 1145, 1147, 1148, 1234, 1462, 1467, 1468, 1469, 1502, 1503, 1563, 1668, 1706, 1755, 1766, 1767, 1768, 1775, 1795, 1800, 1810, 1811, 1812, 1837, 1843, 1874, 1876, 1908, 1927, 1936, 2023, 2024, 2025, 2027, 2090, 2091, 2099, 2104, 2108, 2116, 2165, 2168, 2206, 2215 |
 | `src/client/FolderPicker.tsx` | 18 | 283, 320, 342, 359, 383, 390, 396, 550, 564, 582, 603, 666, 669, 689, 770, 773, 837, 840 |
-| `src/client/DraftLinks.tsx` | 14 | 72, 94, 145, 165, 166, 167, 168, 169, 170, 177, 179, 181, 194, 216 |
 | `src/index.ts` | 10 | 193, 196, 319, 324, 342, 361, 366, 371, 374, 389 |
-| `src/client/draft-links.ts` | 7 | 118, 119, 120, 121, 208, 261, 452 |
 | `src/runtime.ts` | 5 | 57, 173, 275, 354, 407 |
 | `src/client/AdPanel.tsx` | 5 | 64, 134, 156, 157, 161 |
+| `src/client/DraftLinks.tsx` | 5 | 94, 168, 169, 170, 216 |
 | `src/client/FrameCursor.tsx` | 5 | 382, 458, 554, 576, 589 |
 | `src/client/FolderTab.tsx` | 4 | 105, 110, 136, 168 |
 | `src/references.ts` | 3 | 72, 172, 283 |
@@ -77,6 +77,7 @@ None of them is exempt — each has a test shape that would cover it, and this t
 | `src/git.ts` | 2 | 62, 146 |
 | `src/recent-folders.ts` | 2 | 144, 171 |
 | `src/client/ReferenceLinks.tsx` | 2 | 286, 356 |
+| `src/client/draft-links.ts` | 2 | 121, 452 |
 | `src/client/session-link.ts` | 2 | 49, 95 |
 | `src/contract.ts` | 1 | 34 |
 | `src/external.ts` | 1 | 71 |
