@@ -194,6 +194,112 @@ function mountBridge(infos: readonly unknown[] = [], behaviour: 'open' | 'none' 
   return { root, host, opened, actionFor, repeatClick, noteClick }
 }
 
+describe('pointer traffic the bridge should ignore', () => {
+  it('drops a click and a move that land on a text node or outside the editor', async () => {
+    const bridge = mountBridge([EXISTS('AGENTS.md')])
+    const editor = bridge.host.querySelector('[data-lexical-editor="true"]') as HTMLElement
+    const textNode = textOf(editor.querySelector('span') as HTMLElement)
+    try {
+      // 1. A click whose target is a text node, not an element.
+      click(textNode as unknown as Element)
+      // 2. A click on an element outside the composer.
+      click(document.body)
+      // 3. A move over a text node: there is no element to attribute it to.
+      const move = new MouseEvent('pointermove', { bubbles: true, cancelable: true })
+      textNode.dispatchEvent(move)
+      await settle()
+      expect(bridge.opened).not.toHaveBeenCalled()
+      expect(bridge.actionFor).not.toHaveBeenCalled()
+
+      // 4. Re-rendering with a fresh face keeps the bridge working from the new one.
+      const next = vi.fn(() => () => undefined)
+      flushSync(() => {
+        bridge.root.render(<DraftLinks {...({
+          actionFor: next,
+          repeatClick: bridge.repeatClick,
+          noteClick: bridge.noteClick,
+          useReferenceInfo: (select: (snapshot: ReferenceInfoSnapshot) => unknown): unknown =>
+            select({ value: [EXISTS('AGENTS.md')] as ReferenceInfoSnapshot['value'] }),
+        } as unknown as DraftLinksProps)} />)
+      })
+      flushSync(() => {})
+      const span = editor.querySelector('span') as HTMLElement
+      const spanText = textOf(span)
+      stubCaret(spanText, 2)
+      click(span)
+      await settle()
+      expect(next).toHaveBeenCalled()
+    } finally {
+      flushSync(() => { bridge.root.unmount() })
+    }
+  })
+
+  it('keeps the face and repaints when a verdict arrives late', async () => {
+    const bridge = mountBridge([EXISTS('AGENTS.md')])
+    const render = (relative: string) => {
+      flushSync(() => {
+        bridge.root.render(<DraftLinks {...({
+          actionFor: bridge.actionFor,
+          repeatClick: bridge.repeatClick,
+          noteClick: bridge.noteClick,
+          useReferenceInfo: (select: (snapshot: ReferenceInfoSnapshot) => unknown): unknown =>
+            select({ value: [EXISTS(relative)] as ReferenceInfoSnapshot['value'] }),
+        } as unknown as DraftLinksProps)} />)
+      })
+      flushSync(() => {})
+    }
+    try {
+      // A second verdict batch: the ref-held face is refreshed and the painter is
+      // asked to repaint, so a target that vanished stops looking like a link.
+      render('README.md')
+      await settle()
+      render('AGENTS.md')
+      await settle()
+      expect(bridge.host.querySelector('[data-lexical-editor="true"]')).not.toBeNull()
+    } finally {
+      flushSync(() => { bridge.root.unmount() })
+    }
+  })
+
+  it('does nothing when the engine cannot place a caret at the click', async () => {
+    const bridge = mountBridge([EXISTS('AGENTS.md')])
+    const editor = bridge.host.querySelector('[data-lexical-editor="true"]') as HTMLElement
+    const span = editor.querySelector('span') as HTMLElement
+    const original = (document as unknown as { caretRangeFromPoint?: unknown }).caretRangeFromPoint
+    try {
+      // An engine that answers "no range here" is exactly the null the bridge guards.
+      ;(document as unknown as { caretRangeFromPoint: () => null }).caretRangeFromPoint = () => null
+      click(span)
+      await settle()
+      expect(bridge.opened).not.toHaveBeenCalled()
+      expect(bridge.actionFor).not.toHaveBeenCalled()
+    } finally {
+      if (original === undefined) delete (document as unknown as { caretRangeFromPoint?: unknown }).caretRangeFromPoint
+      else (document as unknown as { caretRangeFromPoint: unknown }).caretRangeFromPoint = original
+      flushSync(() => { bridge.root.unmount() })
+    }
+  })
+
+  it('repaints once for a batch of mutations inside the editor', async () => {
+    const bridge = mountBridge([EXISTS('AGENTS.md')])
+    const editor = bridge.host.querySelector('[data-lexical-editor="true"]') as HTMLElement
+    try {
+      const line = editor.querySelector('p') as HTMLElement
+      // Two mutations in the same batch: the second must find the repaint queued.
+      line.appendChild(document.createTextNode(' '))
+      line.appendChild(document.createTextNode(' '))
+      // A mutation outside the editor schedules nothing.
+      document.body.appendChild(document.createElement('div')).textContent = 'x'
+      await settle()
+      await settle()
+      expect(bridge.host.contains(line)).toBe(true)
+    } finally {
+      document.querySelectorAll('body > div[data-dsh-atlas-fixture]').forEach(node => { node.remove() })
+      flushSync(() => { bridge.root.unmount() })
+    }
+  })
+})
+
 describe('tokenRunAt', () => {
   it('reads the whole token from a position inside its undecorated tail', () => {
     const line = '看 @atlas:git/.dsh-atlas-git-smoke.md 和 @AGENTS.md'
@@ -413,6 +519,46 @@ describe('composer DOM reads', () => {
     const line = host.querySelectorAll('p')[1] as HTMLElement
     expect(blockOf(root, textOf(line.firstElementChild as HTMLElement))).toBe(line)
     expect(blockOf(root, document.body)).toBeUndefined()
+  })
+})
+
+describe('a caret the index cannot place', () => {
+  /** A minimal editor: the module reads the same shapes the real composer emits. */
+  function editor(html: string): HTMLElement {
+    const root = document.createElement('div')
+    root.setAttribute('data-lexical-editor', 'true')
+    root.innerHTML = html
+    document.body.appendChild(root)
+    return root
+  }
+
+  it('answers nothing for a comment, an empty line and a line whose child holds no text', () => {
+    const root = editor('<p><span>@a.ts</span> </p><p></p><p><br></p>')
+    const [first, empty, withBreak] = [...root.children] as HTMLElement[]
+    const comment = document.createComment('caret placeholder')
+    first!.appendChild(comment)
+    try {
+      // A comment node is not an element and carries no text offset.
+      expect(tokenAtPoint(root, comment, 0)).toBeUndefined()
+      // An empty line has no child to point at: the offset is the line's end.
+      expect(indexLine(empty!).text).toBe('')
+      expect(tokenAtPoint(root, empty!, 0)).toBeUndefined()
+      // A line whose only child is a break: the caret sits past every token.
+      expect(tokenAtPoint(root, withBreak!, 0)).toBeUndefined()
+    } finally {
+      root.remove()
+    }
+  })
+
+  it('skips a bare @ while still listing the tokens beside it', () => {
+    const root = editor('<p>@</p><p>see @notes.md now</p>')
+    try {
+      const tokens = draftTokens().filter(token => token.line.parentElement === root || token.line === root.children[1])
+      expect(tokens.map(token => token.token)).toEqual(['@notes.md'])
+      expect(tokens.every(token => token.token.length >= 2)).toBe(true)
+    } finally {
+      root.remove()
+    }
   })
 })
 
