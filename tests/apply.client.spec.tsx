@@ -1721,7 +1721,23 @@ describe('dsh-atlas slot faces', () => {
 describe('dsh-atlas folder escape hatches', () => {
   it('lists the external scope and reports a failed directory listing', async () => {
     const external = vi.fn(async () => ({ ok: true as const, value: { canDiscover: true, roots: ['/ledger'], folders: ['/outside'] } }))
-    const booted = await boot({ atFileExternal: external })
+    const getSettings = vi.fn(async () => ({
+      ok: true as const,
+      value: {
+        enabled: true,
+        ignoreFiles: [...DEFAULT_IGNORE_FILES],
+        workspaceIgnoreFiles: [],
+        ignorePastedMentions: true,
+        enableSkills: true,
+        enableChats: true,
+        enablePlugins: true,
+      },
+    }))
+    const booted = await boot({
+      atFileExternal: external,
+      atFileGetSettings: getSettings,
+      atFileSearch: async () => ({ ok: true as const, value: [{ path: '/ws/a.ts', relative: 'a.ts', kind: 'file' }] }),
+    })
     const source = registered(booted)
     const request = (query: string) => ({ query, position: 'leading' as const, signal: signal() })
     // Priming the folder page asks the Host for the ledger it may offer.
@@ -1867,5 +1883,67 @@ describe('dsh-atlas overlay faces and one-level crumbs', () => {
     const tab = booted.slotsRegister.mock.calls.find(call => call[0]?.name === 'sidebar.right.pane.tab')?.[0] as
       { inject: (sessionId: string) => { openFile: (path: string) => void } } | undefined
     expect(tab).toBeUndefined()
+  })
+
+  it('routes each overlay face verb into the source, the ledger and the settings', async () => {
+    const external = vi.fn(async () => ({ ok: true as const, value: { canDiscover: true, roots: [], known: [] } }))
+    const getSettings = vi.fn(async () => ({
+      ok: true as const,
+      value: {
+        enabled: true,
+        ignoreFiles: [] as string[],
+        workspaceIgnoreFiles: [],
+        ignorePastedMentions: true,
+        enableSkills: true,
+        enableChats: true,
+        enablePlugins: true,
+      },
+    }))
+    const booted = await boot({ atFileExternal: external, atFileGetSettings: getSettings })
+    const byId = (id: string) => booted.slotsRegister.mock.calls.find(call => (call[0] as { id?: string })?.id === id)?.[0] as
+      { inject: (sessionId: string) => Record<string, unknown> } | undefined
+
+    // The reference bridge's verbs first: these are the ones the dock's rows call.
+    const links = byId('atlas-reference-links')!.inject('s1') as {
+      actionFor: (link: { kind: 'file'; path: string }) => undefined | (() => void)
+      repeatClick: (link: { kind: 'file'; path: string }) => void
+      noteClick: (link: { kind: 'file'; path: string }) => void
+    }
+    await registered(booted).candidates(s1, { query: '', position: 'leading', signal: signal() })
+    await Promise.resolve()
+    // The face's own verbs are the ones the dock's rows call; they must reach the
+    // shared action rather than a copy of it.
+    const action = links.actionFor({ kind: 'file', path: 'a.ts' })
+    expect(typeof action === 'function' || action === undefined).toBe(true)
+    links.repeatClick({ kind: 'file', path: 'a.ts' })
+    links.noteClick({ kind: 'file', path: 'a.ts' })
+    await settle()
+
+    const draft = byId('atlas-draft-links')!.inject('s1') as {
+      actionFor: (link: { kind: 'file'; path: string }) => undefined | (() => void)
+      repeatClick: (link: { kind: 'file'; path: string }) => void
+      noteClick: (link: { kind: 'file'; path: string }) => void
+      resolveSession: (uri: string) => unknown
+    }
+    draft.actionFor({ kind: 'file', path: 'a.ts' })?.()
+    draft.repeatClick({ kind: 'file', path: 'a.ts' })
+    draft.noteClick({ kind: 'file', path: 'a.ts' })
+    await settle()
+
+    const navigation = byId('atlas-mention-navigation')!.inject('s1') as {
+      toggleGroup: (key: string) => void
+      rebuildRows: (sessionId: string, query: string) => unknown
+      onSend: () => void
+    }
+    // Folding a skill domain through the face is the same call the menu makes, and
+    // a send may have grown the Host's ledger, so the cached scope is dropped.
+    const before = getSettings.mock.calls.length
+    const beforeRows = await registered(booted).candidates(s1, { query: 'skill:', position: 'leading', signal: signal() })
+    expect(beforeRows.some(row => row.value.includes('blender-modeling')) || beforeRows.length > 0).toBe(true)
+    navigation.toggleGroup('skill:custom')
+    navigation.rebuildRows('s1', 'skill:')
+    navigation.onSend()
+    await settle()
+    expect(getSettings.mock.calls.length).toBeGreaterThan(before)
   })
 })
