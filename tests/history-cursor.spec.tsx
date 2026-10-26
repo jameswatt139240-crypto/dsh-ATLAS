@@ -1188,6 +1188,29 @@ describe('FrameCursor', () => {
     scroller.remove()
   })
 
+  it('ignores a scroll that came from no element, and one with no rows to follow', () => {
+    const { root } = mountPair({ historyJumpSmartFollow: true, setDraft: () => {} })
+    pressAndSettle('Escape')
+    pressAndSettle('ArrowUp')
+    const before = roamBar()?.textContent
+    expect(before).toContain('answer two')
+
+    // The document scrolled, not an element: there is no scroller to read.
+    flushSync(() => { document.dispatchEvent(new Event('scroll', { bubbles: true })) })
+    flushSync(() => { frameCallbacks.splice(0).forEach(callback => { callback(0) }) })
+    expect(roamBar()?.textContent).toBe(before)
+
+    // An element scrolled, but it holds no anchor row: no nearest row, so the
+    // cursor stays where the walk put it instead of jumping to a neighbour.
+    const empty = document.createElement('div')
+    document.body.appendChild(empty)
+    flushSync(() => { empty.dispatchEvent(new Event('scroll', { bubbles: true })) })
+    flushSync(() => { frameCallbacks.splice(0).forEach(callback => { callback(0) }) })
+    expect(roamBar()?.textContent).toBe(before)
+    empty.remove()
+    root.unmount()
+  })
+
   it('re-seats the chord from a ruler jump, which is itself a scroll', () => {
     // A ruler jump needs no separate signal: `navigateToTurn` scrolls the
     // transcript, so it arrives here as an ordinary scroll. This spec is why the

@@ -11,12 +11,12 @@ Measured, not estimated. Every number here comes from one command:
 | Metric | Value |
 | --- | --- |
 | Test files | 43 passed |
-| Tests | **1132 passed, 1 skipped** |
-| Statements | **98.30%** (5394 / 5487) |
-| Branches | **93.89%** (3647 / 3884) |
+| Tests | **1133 passed, 1 skipped** |
+| Statements | **98.34%** (5396 / 5487) |
+| Branches | **93.94%** (3649 / 3884) |
 | Lines | **99.34%** (4413 / 4442) |
 | Functions | see `coverage/coverage-final.json` |
-| Uncovered | **93 statements over 17 files** (unique lines: 86) |
+| Uncovered | **91 statements over 17 files** (unique lines: 84) |
 | Typecheck | `tsc --noEmit` → 0 errors |
 | Publish surface | `node scripts/verify-publish-surface.mjs` → 67 files, ad-free bundle |
 
@@ -72,7 +72,7 @@ caller sharing an in-flight promise, retired-client fallbacks, the folder picker
 | `src/client/FolderPicker.tsx` | 13 | 283, 320, 342, 359, 383, 390, 396, 564, 582, 603, 666, 669, 689 |
 | `src/runtime.ts` | 5 | 57, 173, 275, 354, 407 |
 | `src/client/DraftLinks.tsx` | 5 | 94, 168, 169, 170, 216 |
-| `src/client/FrameCursor.tsx` | 5 | 382, 458, 554, 576, 589 |
+| `src/client/FrameCursor.tsx` | 3 | 382, 458, 554 |
 | `src/index.ts` | 2 | 361, 389 |
 | `src/client/AdPanel.tsx` | 2 | 64, 134 |
 | `src/client/FolderTab.tsx` | 2 | 110, 136 |
