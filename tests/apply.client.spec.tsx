@@ -157,7 +157,8 @@ async function boot(options: BootOptions = {}) {
     scope: scopeSession,
     sessionOf: sessionOfSpy,
     list: { getSnapshot: () => ({ ids: sessionList.ids, byId: sessionList.byId }) },
-    open: openSessionSpy,
+    // A client that carries no controller-level `open` at all.
+    ...(options.omitSessionsOpen === true ? {} : { open: openSessionSpy }),
   })
   if (options.mountThrowingService !== undefined) {
     // A service this plugin never declared in `inject` is not readable through the
@@ -656,6 +657,18 @@ describe('dsh-atlas client apply', () => {
     expect(face.resolveSession?.('session-other')).toBe('session-other')
     expect(face.resolveSession?.('Other run')).toBe('session-other')
     expect(face.resolveSession?.('not-a-session')).toBeUndefined()
+  })
+
+  it('reports a session reference on a client with no way to navigate', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    // Neither the Workspace view nor the old controller-level `open` exists.
+    const booted = await boot({ omitSessionsOpen: true })
+    draftBridge(booted).inject('s1').actionFor({ kind: 'session', sessionId: 'session-other' })?.()
+    await settle()
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('has no session navigation to open "session-other"'),
+    )
+    warn.mockRestore()
   })
 
   it('switches to the session a wire mention names', async () => {
