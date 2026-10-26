@@ -90,29 +90,14 @@ export const SYSTEM_BUNDLED_PROVIDERS = new Set(['filesystem', 'dsh-badge'])
 /** Host-side TTL for past-chat candidate scans (the resolver is per-agent). */
 const CHAT_CACHE_TTL_MS = 30_000
 
-/** Per-agent+query past-chat candidate cache: { at, value }. */
-const chatCache = new Map<string, { at: number; value: readonly ChatCandidate[] }>()
-
-/** In-flight past-chat scans (concurrent windows share ONE host scan). */
-const chatInFlight = new Map<string, Promise<readonly ChatCandidate[]>>()
 
 /** Host-side TTL for skill discovery scans (the registry discovery is per-agent). */
 const SKILL_CACHE_TTL_MS = 30_000
 
-/** Per-agent skill candidate cache: { at, value }. */
-const skillCache = new Map<string, { at: number; value: readonly SkillCandidate[] }>()
-
-/** In-flight skill scans (concurrent windows share ONE host scan). */
-const skillInFlight = new Map<string, Promise<readonly SkillCandidate[]>>()
 
 /** Host-side TTL for the plugin inventory read. */
 const PLUGIN_CACHE_TTL_MS = 30_000
 
-/** Plugin candidate cache: { at, value } (the inventory is process-global). */
-let pluginCache: { at: number; value: readonly PluginCandidate[] } | undefined
-
-/** In-flight plugin read (concurrent windows share one inventory read). */
-let pluginInFlight: Promise<readonly PluginCandidate[]> | undefined
 
 /**
  * Map a skill registry source (and its owning provider) onto the management
@@ -225,6 +210,21 @@ export function apply(ctx: Context, config?: Config): void {
   // value per call, so toggling it in the Web settings takes effect immediately.
   const settings = registerAtFileSettings(ctx)
   const readSettings = () => settings.get()
+  // The category caches live with the INSTANCE, not the module: they are keyed by
+  // agent id, and a module-scope map outlives the plugin (a disposed fiber left a
+  // list behind that the next mount then served for a whole TTL).
+  /** Per-agent+query past-chat candidate cache: { at, value }. */
+  const chatCache = new Map<string, { at: number; value: readonly ChatCandidate[] }>()
+  /** In-flight past-chat scans (concurrent windows share ONE host scan). */
+  const chatInFlight = new Map<string, Promise<readonly ChatCandidate[]>>()
+  /** Per-agent skill candidate cache: { at, value }. */
+  const skillCache = new Map<string, { at: number; value: readonly SkillCandidate[] }>()
+  /** In-flight skill scans (concurrent windows share ONE host scan). */
+  const skillInFlight = new Map<string, Promise<readonly SkillCandidate[]>>()
+  /** Plugin candidate cache: { at, value } (the inventory is process-global). */
+  let pluginCache: { at: number; value: readonly PluginCandidate[] } | undefined
+  /** In-flight plugin read (concurrent windows share one inventory read). */
+  let pluginInFlight: Promise<readonly PluginCandidate[]> | undefined
   const writeSettings = async (update: AtFileSettingsUpdate) => {
     if (update.field === 'enabled') {
       await settings.update({ enabled: update.value })

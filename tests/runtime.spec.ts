@@ -880,6 +880,123 @@ describe('dsh-atlas atMention service and reference wiring', () => {
     }
   })
 
+  it('gates each reference expansion on its own switch, service and config', async () => {
+    const signal = new AbortController().signal
+    const agent = { id: 'a1', session: { id: 's1', header: { cwd: '/work' } } } as never
+    const read = (on: boolean) => () => ({
+      enabled: true,
+      enableChats: on,
+      enableSkills: on,
+      enablePlugins: on,
+    } as AtFileSettings)
+    const bare = { get: () => undefined } as unknown as Context
+
+    // Everything switched OFF: each category answers its own empty shape.
+    const off = plugin.buildReferenceExpansion(bare, agent, plugin.Config({}), read(false))
+    expect(await off.expandChats([], signal)).toBeUndefined()
+    expect(await off.expandSkills([], signal)).toEqual([])
+    expect(await off.expandPlugins([], signal)).toEqual([])
+
+    // Switched ON with no service mounted: still an empty answer, never a throw.
+    const on = plugin.buildReferenceExpansion(bare, agent, plugin.Config({}), read(true))
+    expect(await on.expandChats([], signal)).toBeUndefined()
+    expect(await on.expandSkills([], signal)).toEqual([])
+    expect(await on.expandPlugins([], signal)).toEqual([])
+    // The @ seam with no atlas registry has nothing to resolve.
+    expect(await on.expandAtlas([], signal)).toEqual([])
+
+    // injectSkillBody: the skill's own body travels into the step when asked for.
+    const skillsFace = {
+      list: async () => [{ name: 'review', description: 'Review code' }],
+      get: async () => ({ body: 'BODY OF REVIEW' }),
+    }
+    const withBody = {
+      get: (key: string) => (key === 'skills' ? skillsFace : undefined),
+    } as unknown as Context
+    const messages = [createUserMessage({ content: [{ type: 'text', text: '@skill:review' }], source: { kind: 'user' } })]
+    const injected = plugin.buildReferenceExpansion(withBody, agent, plugin.Config({ injectSkillBody: true }), read(true))
+    const withBodies = await injected.expandSkills(messages, signal)
+    expect(withBodies).toHaveLength(1)
+    expect(JSON.stringify(withBodies)).toContain('BODY OF REVIEW')
+    // …and the default leaves the body out.
+    const plain = plugin.buildReferenceExpansion(withBody, agent, plugin.Config({}), read(true))
+    expect(JSON.stringify(await plain.expandSkills(messages, signal))).not.toContain('BODY OF REVIEW')
+  })
+
+  it('caches the mention category lists and answers empty without a service', async () => {
+    const ctx = new Context()
+    const skillsFace = {
+      list: vi.fn(async () => [{ name: 'review', description: 'Review code' }]),
+      get: vi.fn(async () => undefined),
+    }
+    const resolver = { listCandidates: vi.fn(async () => [{ sessionId: 's9', label: 'yesterday', createdAt: 1 }]) }
+    const inventory = { list: async () => ({ entries: [{ moduleName: 'dsh-atlas', enabled: true }] }) }
+    ctx.provide('skills', skillsFace)
+    ctx.provide('sessionReferenceResolver', resolver)
+    ctx.provide('pluginInventory', inventory)
+    const fiber = await mount(ctx)
+    try {
+      const mention = ctx.get('atMention') as AtMentionRuntime
+      const agent = agentWith('/work')
+      const signal = new AbortController().signal
+      expect(await mention.listSkills(agent, signal)).toHaveLength(1)
+      // Second read inside the TTL is served from the cache, not the service.
+      expect(await mention.listSkills(agent, signal)).toHaveLength(1)
+      console.log('SKILLROWS', JSON.stringify(await mention.listSkills(agent, signal)).slice(0,200), 'CALLS', skillsFace.list.mock.calls.length, 'GETS', (ctx as unknown as {get:(k:string)=>unknown}).get('skills') === skillsFace)
+      // The service the plugin reads is the one this test mounted (same object).
+      expect((ctx as unknown as { get(key: string): unknown }).get('skills')).toBe(skillsFace)
+      expect(skillsFace.list).toHaveBeenCalledTimes(1)
+      expect(await mention.listChats(agent, '', 10, signal)).toHaveLength(1)
+      expect(await mention.listChats(agent, '', 10, signal)).toHaveLength(1)
+      expect(resolver.listCandidates).toHaveBeenCalledTimes(1)
+      expect(await mention.listPlugins(signal)).toHaveLength(1)
+    } finally {
+      await fiber.dispose()
+    }
+
+    // No services at all: every category answers an empty list.
+    const bare = new Context()
+    const bareFiber = await mount(bare)
+    try {
+      const mention = bare.get('atMention') as AtMentionRuntime
+      const agent = agentWith('/work')
+      const signal = new AbortController().signal
+      expect(await mention.listSkills(agent, signal)).toEqual([])
+      expect(await mention.listChats(agent, '', 10, signal)).toEqual([])
+      expect(await mention.listPlugins(signal)).toEqual([])
+    } finally {
+      await bareFiber.dispose()
+    }
+  })
+
+  it('keeps the category cache with the instance, so a remount re-reads', async () => {
+    // The caches used to be module scope: a disposed fiber left a list behind and
+    // the next mount served it for a whole TTL (and every test in the file shared
+    // one map). Per-instance, a remount asks the service again.
+    const skillsFace = {
+      list: vi.fn(async () => [{ name: 'review', description: 'Review code' }]),
+      get: vi.fn(async () => undefined),
+    }
+    const first = new Context()
+    first.provide('skills', skillsFace)
+    const firstFiber = await mount(first)
+    const agent = agentWith('/work')
+    const signal = new AbortController().signal
+    await (first.get('atMention') as AtMentionRuntime).listSkills(agent, signal)
+    expect(skillsFace.list).toHaveBeenCalledTimes(1)
+    await firstFiber.dispose()
+
+    const second = new Context()
+    second.provide('skills', skillsFace)
+    const secondFiber = await mount(second)
+    try {
+      await (second.get('atMention') as AtMentionRuntime).listSkills(agent, signal)
+      expect(skillsFace.list).toHaveBeenCalledTimes(2)
+    } finally {
+      await secondFiber.dispose()
+    }
+  })
+
   it('registers the model-facing mention tools when the tools registry is up', async () => {
     const ctx = new Context()
     const registered: string[] = []

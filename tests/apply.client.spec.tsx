@@ -66,6 +66,12 @@ interface BootOptions {
    * behaves, and it is the branch every optional read exists for.
    */
   mountThrowingService?: string
+  /** The at-mention namespace: skills, chats and installed plugins. */
+  remoteAtMention?: {
+    listSkills?: (sessionId: string, signal: AbortSignal) => Promise<{ ok: true; value: readonly unknown[] } | { ok: false; error: { code: string; message: string } }>
+    listChats?: (sessionId: string, query: string, limit: number, signal: AbortSignal) => Promise<{ ok: true; value: readonly unknown[] } | { ok: false; error: { code: string; message: string } }>
+    listPlugins?: (signal: AbortSignal) => Promise<{ ok: true; value: readonly unknown[] } | { ok: false; error: { code: string; message: string } }>
+  }
 }
 
 /** Boot the plugin body over a stub-service context and return the recorded surfaces. */
@@ -98,6 +104,11 @@ async function boot(options: BootOptions = {}) {
       ignoreFiles: [...entry.ignoreFiles],
     })),
     ignorePastedMentions: options.ignorePastedMentions ?? true,
+    // The three category switches default to on in the schema; a stub that omits
+    // them reads as `undefined` and silently empties those categories.
+    enableSkills: true,
+    enableChats: true,
+    enablePlugins: true,
   }
   const getSettings = vi.fn(options.atFileGetSettings ?? (async () => ({ ok: true as const, value: settings })))
   const updateSettings = vi.fn(options.atFileUpdateSettings ?? (async (update: AtFileSettingsUpdate) => {
@@ -127,6 +138,7 @@ async function boot(options: BootOptions = {}) {
     })
   }
   if (options.remoteAtlas !== undefined) ctx.provide('remote.atlas', options.remoteAtlas)
+  if (options.remoteAtMention !== undefined) ctx.provide('remote.atMention', options.remoteAtMention)
   if (options.sidebarTabs !== undefined) ctx.provide('sidebarRightTabs', options.sidebarTabs)
   if (options.uiWorkspace !== undefined) ctx.provide('uiWorkspace', options.uiWorkspace)
   ctx.provide('slots', { inject: slotsInject, register: slotsRegister })
@@ -167,10 +179,20 @@ async function boot(options: BootOptions = {}) {
 }
 
 /** One registered trigger source, narrowed to the members the assertions read. */
+interface SourceRow {
+  name: string
+  value?: string
+  chatUri?: string
+  mentionKind?: string
+  recent?: boolean
+}
+
 interface RegisteredSource {
   trigger: string
   name: string
-  candidates: (session: { sessionId: SessionId }, req: { query: string; position: 'leading' | 'inline'; signal: AbortSignal }) => Promise<readonly { name: string }[]>
+  candidates: (session: { sessionId: SessionId }, req: { query: string; position: 'leading' | 'inline'; signal: AbortSignal }) => Promise<readonly SourceRow[]>
+  onPick?: (args: { candidate: SourceRow; session: { sessionId: SessionId }; action: string; span?: unknown }) => { text?: string } | undefined
+  openReference?: (session: { sessionId: SessionId }, reference: { ref: string }) => boolean
 }
 
 /** The source the wiring registered, if any. */
@@ -1427,6 +1449,86 @@ describe('dsh-atlas settings verbs', () => {
       field: 'workspaceIgnoreFiles',
       value: [{ workspace: '/other', ignoreFiles: ['keep.tmp'] }],
     })
+  })
+})
+
+describe('dsh-atlas mention categories beyond paths', () => {
+  // The shapes the Host's own selectors return: a skill carries its tier, a chat
+  // its uri, a plugin its package name.
+  const skill = { name: 'review', description: 'Review code', tier: 'custom' as const }
+  const chat = { name: 'yesterday', label: 'yesterday', sessionId: 's9', updatedAt: 1, chatUri: 'dsh://chat/s9' }
+  const plugin = { entryId: 'dsh-atlas', moduleName: 'dsh-atlas', enabled: true }
+
+  it('lists skills, chats and plugins through their own Remote and counts each pick', async () => {
+    const booted = await boot({
+      remoteAtMention: {
+        listSkills: async () => ({ ok: true as const, value: [skill] }),
+        listChats: async () => ({ ok: true as const, value: [chat] }),
+        listPlugins: async () => ({ ok: true as const, value: [plugin] }),
+      },
+    })
+    const source = registered(booted)
+    const request = (query: string) => ({ query, position: 'leading' as const, signal: signal() })
+
+    const skills = await source.candidates(s1, request('skill:'))
+    expect(skills.map(row => row.name)).toContain('review')
+    expect(source.onPick?.({ candidate: { name: 'review', value: 'review', mentionKind: 'skill' }, session: s1, action: 'accept' }))
+      .toEqual({ text: '@skill:review ' })
+
+    const chats = await source.candidates(s1, request('chat:'))
+    expect(chats.map(row => row.name)).toContain('yesterday')
+    expect(source.onPick?.({ candidate: { name: 'yesterday', value: 'yesterday', chatUri: 'dsh://chat/s1', mentionKind: 'chat' }, session: s1, action: 'accept' }))
+      .toEqual({ text: '@[yesterday](dsh://chat/s1) ' })
+
+    const plugins = await source.candidates(s1, request('plugin:'))
+    expect(plugins.map(row => row.name)).toContain('dsh-atlas')
+    expect(source.onPick?.({ candidate: { name: 'dsh-atlas', value: 'dsh-atlas', mentionKind: 'plugin' }, session: s1, action: 'accept' }))
+      .toEqual({ text: '@plugin:dsh-atlas ' })
+
+    await settle()
+    // Every pick lands in the cross-category usage ledger (one writer, three kinds).
+    const usage = booted.updateSettings.mock.calls
+      .map(call => call[0] as { field: string; value?: readonly { key: string }[] })
+      .filter(update => update.field === 'usage')
+    const keys = usage.flatMap(update => (update.value ?? []).map(entry => entry.key))
+    expect(keys).toContain('skill:review')
+    expect(keys).toContain('chat:yesterday')
+    expect(keys).toContain('plugin:dsh-atlas')
+  })
+
+  it('answers empty for a switched-off category and for a missing namespace', async () => {
+    const off = await boot({ remoteAtMention: { listSkills: vi.fn(async () => ({ ok: true as const, value: [skill] })) } })
+    // The switches default to on, so turning them off is the path under test.
+    const section = settingsSection(off).inject()
+    await section.setEnableSkills(false)
+    await section.setEnableChats(false)
+    await section.setEnablePlugins(false)
+    const request = (query: string) => ({ query, position: 'leading' as const, signal: signal() })
+    const backOnly = (rows: readonly SourceRow[]): boolean => rows.every(row => row.mentionKind === 'back')
+    expect(backOnly(await registered(off).candidates(s1, request('skill:')))).toBe(true)
+    expect(backOnly(await registered(off).candidates(s1, request('chat:')))).toBe(true)
+    expect(backOnly(await registered(off).candidates(s1, request('plugin:')))).toBe(true)
+
+    // No at-mention namespace at all: same empty answer, never a throw.
+    const bare = await boot({})
+    expect(backOnly(await registered(bare).candidates(s1, request('skill:')))).toBe(true)
+    expect(backOnly(await registered(bare).candidates(s1, request('chat:')))).toBe(true)
+    expect(backOnly(await registered(bare).candidates(s1, request('plugin:')))).toBe(true)
+  })
+
+  it('turns a failed list into a rejection naming the operation', async () => {
+    const fail = { ok: false as const, error: { code: 'down', message: 'boom' } }
+    const booted = await boot({
+      remoteAtMention: {
+        listSkills: async () => fail,
+        listChats: async () => fail,
+        listPlugins: async () => fail,
+      },
+    })
+    const request = (query: string) => ({ query, position: 'leading' as const, signal: signal() })
+    await expect(registered(booted).candidates(s1, request('skill:'))).rejects.toThrow(/listSkills failed: down: boom/)
+    await expect(registered(booted).candidates(s1, request('chat:'))).rejects.toThrow(/listChats failed: down: boom/)
+    await expect(registered(booted).candidates(s1, request('plugin:'))).rejects.toThrow(/listPlugins failed: down: boom/)
   })
 })
 
