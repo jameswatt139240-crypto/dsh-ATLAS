@@ -69,13 +69,13 @@ export const cssText = `
   white-space: nowrap;
 }
 .dsh_atFile_cost_warn {
-  color: var(--dsw-alias-label-error, #ef4444);
+  color: var(--dsw-alias-state-error-primary, #ef4444);
   font-weight: 600;
 }
 .dsh_atFile_missing {
   flex: none;
   padding: 0 6px;
-  color: var(--dsw-alias-label-error, #ef4444);
+  color: var(--dsw-alias-state-error-primary, #ef4444);
   font-size: 11px;
   line-height: 18px;
   white-space: nowrap;
@@ -161,7 +161,7 @@ export const cssText = `
 .dsh_atFile_groupTitle {
   margin-top: 8px;
   padding-top: 12px;
-  border-top: 1px solid var(--dsw-alias-border-secondary);
+  border-top: 1px solid var(--dsw-alias-border-l2);
   color: var(--dsw-alias-label-primary);
   font-size: 14px;
   font-weight: 600;
@@ -719,7 +719,7 @@ export const cssText = `
   border-bottom: 1px solid var(--dsw-alias-border-l1, rgba(128, 128, 128, 0.25));
   position: sticky;
   top: 0;
-  background: var(--dsw-alias-bg-primary, transparent);
+  background: var(--dsw-alias-bg-base, transparent);
 }
 .dsh_atlas_folderUp,
 .dsh_atlas_folderOpen {
@@ -823,7 +823,7 @@ export const cssText = `
   max-height: min(560px, 84vh);
   border-radius: 14px;
   border: 1px solid var(--dsw-alias-border-l1, rgba(128, 128, 128, 0.3));
-  background: var(--dsw-specific-menu, var(--dsw-alias-bg-primary, #1b1f2a));
+  background: var(--dsw-specific-menu, var(--dsw-alias-bg-base, #1b1f2a));
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
   color: var(--dsw-alias-label-primary);
   font-size: 13px;
@@ -906,7 +906,7 @@ export const cssText = `
   background: var(--dsw-alias-interactive-bg-active, rgba(128, 128, 128, 0.28)) !important;
 }
 .dsh_atlas_pickerRow:focus-visible {
-  outline: 2px solid var(--dsw-alias-border-focus, #4c8dff);
+  outline: 2px solid var(--dsw-alias-brand-primary, #4c8dff);
   outline-offset: -2px;
 }
 /* A group header is a row that is also a heading: it toggles, it does not navigate,
@@ -921,7 +921,7 @@ export const cssText = `
   flex: none;
   padding: 1px 6px;
   border-radius: 999px;
-  background: var(--dsw-alias-bg-subtle, rgba(128, 128, 128, 0.18));
+  background: var(--dsw-alias-bg-layer-2, rgba(128, 128, 128, 0.18));
   font-size: 11px;
   opacity: 0.75;
 }
@@ -1040,15 +1040,15 @@ html[data-atlas-roaming] [data-conversation-scroll] {
 html[data-atlas-roaming] [data-composer-card] {
   /* The composer keeps full weight: the draft is still what is being edited. */
   opacity: 1;
-  box-shadow: 0 0 0 2px var(--dsw-alias-border-accent, transparent);
+  box-shadow: 0 0 0 2px var(--dsw-alias-brand-primary, transparent);
 }
 html[data-atlas-roaming] [data-atlas-frame-hit] {
   /* The cursor's frame: a band plus a left rule, readable in both themes. */
   position: relative;
   opacity: 1;
-  background: var(--dsw-alias-bg-elevated, transparent);
+  background: var(--dsw-alias-bg-layer-2, transparent);
   border-radius: 8px;
-  box-shadow: 0 0 0 2px var(--dsw-alias-border-accent, transparent);
+  box-shadow: 0 0 0 2px var(--dsw-alias-brand-primary, transparent);
 }
 html[data-atlas-roaming] [data-atlas-frame-hit]::before {
   content: '';
@@ -1057,7 +1057,7 @@ html[data-atlas-roaming] [data-atlas-frame-hit]::before {
   inset-inline-start: 0;
   width: 3px;
   border-radius: 2px;
-  background: var(--dsw-alias-border-accent, currentColor);
+  background: var(--dsw-alias-brand-primary, currentColor);
 }
 /* The readout naming the frame the cursor is on.
    It renders in the conversation.input.dock slot, NOT as a floating overlay, so it is a
@@ -1103,7 +1103,7 @@ html[data-atlas-roaming] [data-atlas-frame-hit]::before {
    sibling of the goal and todo cards rather than as a plugin-drawn lookalike:
    same 0.5px l1 hairline, same 12px radius, same --dsw-specific-tip surface, same
    36px height and 4px/12px padding. The earlier version invented its own
-   (999px pill, --dsw-alias-bg-elevated, a drop shadow, an em-based font size),
+   (999px pill, --dsw-alias-bg-layer-2, a drop shadow, an em-based font size),
    which is why it did not match — those tokens are a different rung of the same
    palette. */
 .dsh_atlas_roamBarInner {
@@ -1151,7 +1151,7 @@ html[data-atlas-roaming] [data-atlas-frame-hit]::before {
   line-height: 18px;
   white-space: nowrap;
   color: var(--dsw-alias-label-primary-dimmed);
-  background: var(--dsw-alias-bg-muted);
+  background: var(--dsw-alias-bg-layer-2);
 }
 .dsh_atlas_roamBarText {
   /* Takes the leftover room and gives it up first: the position and the label
@@ -1207,9 +1207,14 @@ html[data-atlas-roaming] [data-atlas-frame-hit]::before {
   max-width: 42rem;
   max-height: min(70vh, 32rem);
   overflow: hidden;
-  border: 1px solid var(--dsw-alias-border-subtle, transparent);
+  border: 1px solid var(--dsw-alias-border-l1, transparent);
   border-radius: 12px;
-  background: var(--dsw-alias-bg-elevated, transparent);
+  /* Opaque on purpose: this dialog floats OVER the transcript, and a themed
+     surface that resolved to transparent (there is no bg-elevated token in this
+     shell) let the conversation read through the rows. Same surface as the
+     roaming bar so the two history surfaces match. */
+  background: var(--dsw-specific-tip, var(--dsw-alias-bg-layer-1, #1b1f2a));
+  backdrop-filter: blur(1px);
   box-shadow: 0 16px 48px rgb(0 0 0 / 32%);
   color: var(--dsw-alias-label-primary, inherit);
 }
@@ -1232,9 +1237,9 @@ html[data-atlas-roaming] [data-atlas-frame-hit]::before {
 .dsh_atlas_paletteFilter {
   margin: 0 14px 8px;
   padding: 8px 10px;
-  border: 1px solid var(--dsw-alias-border-subtle, transparent);
+  border: 1px solid var(--dsw-alias-border-l1, transparent);
   border-radius: 8px;
-  background: var(--dsw-alias-bg-subtle, transparent);
+  background: var(--dsw-alias-bg-layer-2, transparent);
   color: inherit;
   font: inherit;
 }
@@ -1261,7 +1266,7 @@ html[data-atlas-roaming] [data-atlas-frame-hit]::before {
   cursor: pointer;
 }
 .dsh_atlas_paletteRow[data-atlas-history-active] {
-  background: var(--dsw-alias-bg-subtle, rgb(127 127 127 / 14%));
+  background: var(--dsw-alias-bg-layer-2, rgb(127 127 127 / 14%));
 }
 .dsh_atlas_paletteRowText {
   display: flex;
@@ -1285,7 +1290,7 @@ html[data-atlas-roaming] [data-atlas-frame-hit]::before {
   flex: none;
   padding: 1px 5px;
   border-radius: 4px;
-  background: var(--dsw-alias-bg-subtle, transparent);
+  background: var(--dsw-alias-bg-layer-2, transparent);
   color: var(--dsw-alias-label-tertiary, #9aa4b2);
   font-size: 11px;
 }
@@ -1296,7 +1301,7 @@ html[data-atlas-roaming] [data-atlas-frame-hit]::before {
 }
 .dsh_atlas_paletteFoot {
   padding: 8px 14px;
-  border-top: 1px solid var(--dsw-alias-border-subtle, transparent);
+  border-top: 1px solid var(--dsw-alias-border-l1, transparent);
   font-size: 12px;
   color: var(--dsw-alias-label-tertiary, #9aa4b2);
 }

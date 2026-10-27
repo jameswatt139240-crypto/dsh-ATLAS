@@ -1,7 +1,7 @@
 {
   "name": "@sidequest-007/dsh-atlas",
-  "description": "AT Last, All Sources. One @ to jump anywhere — and Esc to walk the session back, one turn at a time.",
-  "version": "1.0.9-port.8",
+  "description": "AT Last, All Sources. One @ to jump anywhere \u2014 and Esc to walk the session back, one turn at a time.",
+  "version": "1.0.9-port.9",
   "license": "MIT",
   "author": "Side Quest Labs",
   "publishConfig": {

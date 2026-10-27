@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.0.9-port.9] - 2026-10-27
+
+### Fixed
+
+- **The history palette had no surface of its own.** It asked for
+  `--dsw-alias-bg-elevated`, a token this shell does not define, so the declared fallback
+  (`transparent`) applied and the transcript read straight through the dialog — the rows and the
+  conversation behind them interfered, which is what the user reported. It now uses the same
+  surface as the roaming bar (`--dsw-specific-tip`, falling back to `--dsw-alias-bg-layer-1`), so
+  the two history surfaces match and the list sits on something solid.
+- The same audit found eight more tokens this shell never defines, each of which had been
+  silently resolving to `transparent`: `bg-subtle`, `bg-muted`, `bg-primary`, `border-subtle`,
+  `border-accent`, `border-focus`, `border-secondary` and `label-error`. They now map to the
+  tokens that exist (`bg-layer-2`, `bg-base`, `border-l1`, `brand-primary`, `border-l2`,
+  `state-error-primary`). Visible consequences: the roaming frame band and its left rule, the
+  palette's borders and the picker's footer rule were all invisible before.
+
 ## [1.0.9-port.8] - 2026-10-27
 
 ### 文档
