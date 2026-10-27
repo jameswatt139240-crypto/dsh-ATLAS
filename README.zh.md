@@ -39,7 +39,7 @@ git clone https://github.com/jameswatt139240-crypto/dsh-ATLAS
 dsh plugin --profile web add link:/path/to/dsh-ATLAS
 
 # npm 包（已发布；`port` 是移植版使用的 tag，`latest` 仍是 1.0.9）
-dsh plugin --profile web add @sidequest-007/dsh-atlas@1.0.9-port.7
+dsh plugin --profile web add @sidequest-007/dsh-atlas@1.0.9-port.9
 ```
 
 安装或更新后**重启 `dsh web`**，确保 Host 与浏览器客户端都加载同一版本。然后在输入框打 `@`。
