@@ -62,6 +62,22 @@ with the harness CLI and pnpm pinned. It runs even when `publish` skipped the up
 because the version was already on npm — the question is "does the published version
 load", which is worth asking of any version.
 
+## Where this chain currently stands
+
+| Gate | Last proven on |
+|---|---|
+| `pnpm run check` | every commit; `1.0.9-port.9` (`95fcfd9`) |
+| CI `publish` (OIDC) | `1.0.9-port.7`, `.8`, `.9` — all green |
+| `verify-registry-install.sh`, locally | `1.0.9` (latest) and `1.0.9-port.9` — both PASS |
+| CI `acceptance` job | **never executed on a runner yet** |
+
+The `acceptance` job was added in `a77d2a2`, after the newest tag (`v1.0.9-port.9`,
+`95fcfd9`), so that release run only had `publish`. The script it calls has been run to
+PASS twice by hand against the published versions, but hand-run is not runner-run: the
+runner adds its own variables (npm/pnpm presence, `/tmp` writability, port availability,
+registry propagation time). **The next release must show both jobs green** — until it
+does, treat the chain as proven locally and unproven in CI.
+
 ## Dist-tags
 
 A prerelease never takes `latest`. `1.0.9-port.9` publishes under the `port` dist-tag;
