@@ -1,30 +1,33 @@
 #!/usr/bin/env bash
 # Publish acceptance: install the RELEASED package from the public registry into a
-# profile that has never seen it, boot a host from it, and prove the served client
-# bundle is the one that was built.
+# profile that has never seen it, boot a host from it, and prove the client bundle the
+# host serves is the one that was published.
 #
-# Why this exists: every other gate (typecheck, vitest, build, verify:publish) runs
-# on the WORKING TREE. None of them can see the mistakes that only appear after
-# `npm publish` — a `files` list that drops lib/, a lib/ that was never rebuilt, a
-# build flag that silently changes the bundle. That is not hypothetical: 1.0.9-port.6
-# shipped with `lib/index.js` still at commit 9ca2757, missing the instance-level
-# cache fix from 397f9da, and every local gate was green.
+# Why this exists: every other gate (tsc, vitest, build, verify:publish) runs on the
+# WORKING TREE. None of them can see the mistakes that only exist after `npm publish`
+# — a `files` list that drops lib/, a lib/ that was never rebuilt, a build flag that
+# changed the bundle. That is not hypothetical: 1.0.9-port.6 shipped with
+# lib/index.js still at commit 9ca2757, missing the instance-level cache fix from
+# 397f9da, while every local gate was green.
 #
 # Usage:
 #   ./verify-registry-install.sh 1.0.9-port.9
-#   ./verify-registry-install.sh 1.0.9-port.9 --keep     # leave the host running
+#   ./verify-registry-install.sh 1.0.9-port.9 --keep      # leave the host running
+#   SKELETON_PROFILE=~/.dsh/profiles/web ./verify-registry-install.sh <version>
 #
-# Exit 0 only when: tarball sha1 == registry dist.shasum, fileCount matches the
-# published count, the bundle carries the release's markers, and a host booted from
-# that profile serves a client bundle of the same byte length with the same markers.
+# Exit 0 only when the tarball matches the registry record, the profile installs the
+# package THROUGH THE REGISTRY (never a file: tarball), a host boots from that profile
+# and registers the plugin, and the bundle it serves equals the package's own
+# lib/client.js up to the two edits the host makes to every module it serves.
 set -uo pipefail
 
 VERSION="${1:?usage: $0 <version> [--keep]}"
 KEEP="${2:-}"
 PKG="@sidequest-007/dsh-atlas"
-REGISTRY="https://registry.npmjs.org"
-HOME_DIR="/tmp/dsh-registry-check-$VERSION"
-PROFILE="$HOME_DIR/profiles/acceptance"
+REGISTRY="${REGISTRY:-https://registry.npmjs.org}"
+HOME_DIR="${DSH_HOME:-/tmp/dsh-registry-check-$VERSION}"
+PROFILE_NAME="${PROFILE_NAME:-acceptance}"
+PROFILE="$HOME_DIR/profiles/$PROFILE_NAME"
 PORT="${ACCEPTANCE_PORT:-3095}"
 FAILED=0
 
@@ -32,9 +35,18 @@ say() { printf '%s\n' "$*"; }
 fail() { FAILED=1; printf 'FAIL  %s\n' "$*"; }
 pass() { printf 'ok    %s\n' "$*"; }
 
-# --- 1. the published record -------------------------------------------------
+# --- 1. the published record (with propagation tolerance) --------------------
 say "== registry record for $PKG@$VERSION"
-META="$(curl -fsS "$REGISTRY/$PKG/$VERSION")" || { say "FAIL  版本不存在（可能仍在 CDN 传播，稍后重试）"; exit 1; }
+META=""
+for attempt in $(seq 1 30); do
+  META="$(curl -fsS "$REGISTRY/$PKG/$VERSION" 2>/dev/null)" && [ -n "$META" ] && break
+  META=""
+  sleep 10
+done
+if [ -z "$META" ]; then
+  say "FAIL  registry 上找不到 $VERSION（等了 5 分钟）"
+  exit 1
+fi
 read -r SHASUM COUNT TARBALL < <(printf '%s' "$META" | node -e '
 let d = ""; process.stdin.on("data", c => d += c).on("end", () => {
   const v = JSON.parse(d).dist
@@ -45,7 +57,7 @@ say "      shasum $SHASUM  fileCount $COUNT"
 # --- 2. the tarball the registry serves --------------------------------------
 say "== tarball"
 WORK="$(mktemp -d)"
-curl -fsSL -o "$WORK/pkg.tgz" "$TARBALL" || { fail "下载失败 $TARBALL"; exit 1; }
+curl -fsSL -o "$WORK/pkg.tgz" "$TARBALL" || { say "FAIL  下载失败 $TARBALL"; exit 1; }
 GOT="$(sha1sum "$WORK/pkg.tgz" | cut -d' ' -f1)"
 [ "$GOT" = "$SHASUM" ] && pass "sha1 == dist.shasum ($GOT)" || fail "sha1 $GOT != $SHASUM"
 FILES="$(tar tzf "$WORK/pkg.tgz" | wc -l | tr -d ' ')"
@@ -60,42 +72,63 @@ done
 # --- 3. a profile that has never seen this package --------------------------
 say "== profile $PROFILE"
 rm -rf "$HOME_DIR"
-mkdir -p "$PROFILE"
-# The host needs a real profile skeleton (cordis.yml + compatibility.json) to boot;
-# an empty directory with only dependencies starts and exits without a word. Copying
-# the skeleton from the live profile keeps the room clean of the PACKAGE (step 4
-# installs it from the registry) without fighting the host's own bootstrap.
-SKELETON="${SKELETON_PROFILE:-$HOME/.dsh/profiles/web}"
-cp "$SKELETON/cordis.yml" "$PROFILE/cordis.yml" 2>/dev/null || fail "缺少 $SKELETON/cordis.yml"
-cp "$SKELETON/compatibility.json" "$PROFILE/compatibility.json" 2>/dev/null || true
-cat > "$PROFILE/pnpm-workspace.yaml" <<'YAML'
-nodeLinker: hoisted
-autoInstallPeers: false
-dangerouslyAllowAllBuilds: true
-YAML
-# Same plugin set as the skeleton EXCEPT our package: the acceptance profile must not
-# inherit an atlas from a file: tarball or an older registry version.
-node -e '
-const fs = require("fs")
-const live = JSON.parse(fs.readFileSync(process.argv[1] + "/package.json", "utf8"))
-const deps = { ...live.dependencies }
-delete deps["@sidequest-007/dsh-atlas"]
-const out = { name: "dsh-profile-acceptance", private: true, dependencies: deps }
-if (live.dsh) out.dsh = live.dsh
-fs.writeFileSync(process.argv[2] + "/package.json", JSON.stringify(out, null, 2) + "\n")
-' "$SKELETON" "$PROFILE"
-pass "从 $SKELETON 复制骨架，剥掉 atlas（其余 $(node -p "Object.keys(require('$PROFILE/package.json').dependencies).length") 个依赖保留）"
+mkdir -p "$HOME_DIR"
+CLI="$(command -v dsh)"
+[ -n "$CLI" ] || { say "FAIL  PATH 上没有 dsh"; exit 1; }
 
-( cd "$PROFILE" \
-  && pnpm install --registry="$REGISTRY" --config.dangerouslyAllowAllBuilds=true >/tmp/acceptance-install.log 2>&1 \
-  && pnpm add "$PKG@$VERSION" --registry="$REGISTRY" --config.dangerouslyAllowAllBuilds=true >>/tmp/acceptance-install.log 2>&1 )
+# Preferred: let the host scaffold its own profile from the shipped template — the
+# same thing a user gets, and no copy of anybody's live profile is involved.
+if DSH_HOME="$HOME_DIR" "$CLI" "$PROFILE_NAME" --from-default-profile web --dump-config \
+     > "$HOME_DIR/scaffold.log" 2>&1 && [ -f "$PROFILE/package.json" ]; then
+  pass "profile 由 host 的 web 模板创建（--from-default-profile）"
+else
+  # Fallback for a host too old to scaffold: copy a skeleton, then delete our package
+  # from it so the only way in is the registry (step 4).
+  SKELETON="${SKELETON_PROFILE:-$HOME/.dsh/profiles/web}"
+  mkdir -p "$PROFILE"
+  if [ -f "$SKELETON/package.json" ]; then
+    cp "$SKELETON/cordis.yml" "$PROFILE/cordis.yml" 2>/dev/null || fail "缺少 $SKELETON/cordis.yml"
+    cp "$SKELETON/compatibility.json" "$PROFILE/compatibility.json" 2>/dev/null || true
+    node -e '
+      const fs = require("fs")
+      const live = JSON.parse(fs.readFileSync(process.argv[1] + "/package.json", "utf8"))
+      const deps = { ...live.dependencies }
+      delete deps["@sidequest-007/dsh-atlas"]
+      const out = { name: "dsh-profile-acceptance", private: true, dependencies: deps }
+      if (live.dsh) out.dsh = live.dsh
+      fs.writeFileSync(process.argv[2] + "/package.json", JSON.stringify(out, null, 2) + "\n")
+    ' "$SKELETON" "$PROFILE"
+    pass "profile 由骨架 $SKELETON 创建，已剥掉 $PKG"
+  else
+    say "FAIL  既不能 --from-default-profile，也没有骨架可复制"
+    exit 1
+  fi
+fi
+if node -e '
+  const p = require(process.argv[1] + "/package.json")
+  process.exit(p.dependencies && p.dependencies["@sidequest-007/dsh-atlas"] ? 1 : 0)
+' "$PROFILE"; then pass "profile 起始状态不含 $PKG"; else fail "profile 起始就有 $PKG，干净房间不成立"; fi
+
+# The user's own install path, against the public registry.
+# `npm_config_registry` is how pnpm (which the plugin manager drives) is pointed at the
+# public registry: this machine's pnpm defaults to a mirror, and a mirror that has not
+# caught up yet answers "connection timed out" for a version that was published
+# seconds ago. The acceptance run must never depend on somebody else's cache.
+if DSH_HOME="$HOME_DIR" npm_config_registry="$REGISTRY" \
+     "$CLI" plugin --profile "$PROFILE_NAME" add "$PKG@$VERSION" --registry="$REGISTRY" \
+     > "$HOME_DIR/install.log" 2>&1; then
+  pass "dsh plugin add $PKG@$VERSION（来自 registry）"
+else
+  fail "dsh plugin add 失败，见 $HOME_DIR/install.log"
+  tail -5 "$HOME_DIR/install.log" | sed 's/^/      /'
+fi
 INSTALLED="$(node -p "require('$PROFILE/node_modules/$PKG/package.json').version" 2>/dev/null)"
-[ "$INSTALLED" = "$VERSION" ] && pass "profile 内安装版本 $INSTALLED（来自 registry）" || fail "安装版本 ${INSTALLED:-无} != $VERSION"
+[ "$INSTALLED" = "$VERSION" ] && pass "profile 内安装版本 $INSTALLED" || fail "安装版本 ${INSTALLED:-无} != $VERSION"
 
 # --- 4. a host booted from that profile ------------------------------------
 say "== boot on :$PORT"
 cd "$HOME_DIR" || exit 1
-setsid env DSH_HOME="$HOME_DIR" "$(command -v dsh)" --profile acceptance --port "$PORT" --no-open \
+setsid env DSH_HOME="$HOME_DIR" "$CLI" --profile "$PROFILE_NAME" --port "$PORT" --no-open \
   > "$HOME_DIR/boot.log" 2>&1 < /dev/null &
 BOOT_PID=$!
 TOKEN=""
@@ -121,24 +154,22 @@ else
     SERVED="$(wc -c < "$HOME_DIR/client.js" | tr -d ' ')"
     PACKED="$(wc -c < "$WORK/package/lib/client.js" | tr -d ' ')"
     [ "$CODE" = "200" ] && pass "客户端包 200（$SERVED B）" || fail "客户端包 HTTP $CODE"
-    # The batch route appends its own sourceMappingURL line (~46 B here): it is the
-    # host's envelope around the module, not the package's bytes. So assert the
-    # published payload is a PREFIX of what the host serves, and that only that
-    # trailer follows — a stale lib/ or a different build would not prefix-match.
+    # The host rewrites the trailing sourceMappingURL to its batch route
+    # (??pkg/client.js.map&rev=…) and appends the batch separator ("\n;") after the
+    # module body. Those two are the only licence to differ: a stale lib/ or another
+    # build would not match on the body.
     if node -e '
       const fs = require("fs")
-      const strip = text => text.replace(/\n?\/\/# sourceMappingURL=[^\n]*\n?$/, "")
+      const strip = text => text
+        .replace(/\n?\/\/# sourceMappingURL=[^\n]*\n?$/, "")
+        .replace(/[\s;]+$/, "")
       const served = strip(fs.readFileSync(process.argv[1], "utf8"))
       const packed = strip(fs.readFileSync(process.argv[2], "utf8"))
-      // The host rewrites the trailing sourceMappingURL to its batch route
-      // (??pkg/client.js.map&rev=…), so that one line is the only licence to differ.
-      // The host also appends the batch separator ("\n;") after the module body.
-      const norm = text => text.replace(/[\s;]+$/, "")
-      process.exit(norm(served) === norm(packed) ? 0 : 1)
+      process.exit(served === packed ? 0 : 1)
     ' "$HOME_DIR/client.js" "$WORK/package/lib/client.js"; then
-      pass "服务端载荷 == 包内 lib/client.js（$PACKED B，仅尾部 sourceMappingURL 被 host 改写）"
+      pass "服务端载荷 == 包内 lib/client.js（$PACKED B，仅尾部 sourceMappingURL 与分隔符不同）"
     else
-      fail "服务端载荷与包内 lib/client.js 不一致（可能是陈旧 lib 或不同构建）"
+      fail "服务端载荷与包内 lib/client.js 不一致（陈旧 lib 或不同构建）"
     fi
   fi
   ALERTS="$(grep -ci 'atlas.*\(error\|fail\)' "$HOME_DIR/boot.log" 2>/dev/null || true)"
@@ -153,5 +184,9 @@ else
 fi
 rm -rf "$WORK"
 
-if [ "$FAILED" = "0" ]; then say "== PASS  $PKG@$VERSION 可从 registry 全新安装并加载"; else say "== FAIL  见上面的 FAIL 行"; fi
+if [ "$FAILED" = "0" ]; then
+  say "== PASS  $PKG@$VERSION 可从 registry 全新安装并加载"
+else
+  say "== FAIL  见上面的 FAIL 行"
+fi
 exit "$FAILED"

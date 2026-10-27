@@ -85,3 +85,40 @@ jobs:
       - name: Publish
         if: steps.published.outputs.already == 'no'
         run: npm publish --ignore-scripts --tag "${{ steps.tag.outputs.tag }}"
+
+  # The gate that can only run AFTER publishing.
+  #
+  # Everything else in this repository is measured on the working tree. The published
+  # artifact is a different thing: a `files` list that drops lib/, a lib/ that was never
+  # rebuilt, a build flag that changed the bundle — all invisible to tsc/vitest/build.
+  # 1.0.9-port.6 shipped exactly that way (lib/index.js still at 9ca2757, missing the
+  # instance-level cache fix from 397f9da) while every local gate was green.
+  #
+  # This job therefore does what a user does, on a profile that has never seen the
+  # package: scaffold a profile from the shipped web template, `dsh plugin add` the
+  # version from the PUBLIC registry, boot a host, and compare the client bundle that
+  # host serves with the tarball's own lib/client.js.
+  acceptance:
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: ''
+      # The harness CLI and the package manager it drives. Pinned: a moving host version
+      # would make a red run ambiguous between "our package is broken" and "the host
+      # changed under us".
+      - name: Install the harness CLI and pnpm
+        run: |
+          npm install --global @deepseek-ai/dsh@0.2.0-rc.2 pnpm@12
+          dsh --version
+          pnpm --version
+      - name: Install the published version from the registry and load it
+        env:
+          # Nothing outside the public registry may satisfy this install.
+          REGISTRY: https://registry.npmjs.org
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          ./scripts/verify-registry-install.sh "$version"
