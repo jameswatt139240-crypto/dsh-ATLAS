@@ -2,13 +2,13 @@
 
 **English** · [简体中文](README.zh.md)
 
-A **Side Quest** project (工作室：支线任务, **Side Quest Labs**) — npm scope `@sidequest-007/*`, repository [`jameswatt139240-crypto/dsh-ATLAS`](https://github.com/jameswatt139240-crypto/dsh-ATLAS); the DSH plugin id keeps the ecosystem's unscoped `dsh-*` form.
+Beyond the **built-in `@`**: line ranges like `@src/a.ts:12-40`, skills, plugins and any git repo as source groups — with the approximate token cost of each reference shown before you send.
 
 <img src="assets/diagrams/atlas-overview.svg" alt="dsh-ATLAS: one @ trigger, five built-in categories plus the bundled git category, and a category any plugin can register" width="880">
 
-**AT Last, All Sources.**
+**AT Last, All Sources.** One `@` . Jump anywhere.
 
-One `@` . Jump anywhere.
+A **Side Quest** project (工作室：支线任务, **Side Quest Labs**) — npm scope `@sidequest-007/*`, repository [`jameswatt139240-crypto/dsh-ATLAS`](https://github.com/jameswatt139240-crypto/dsh-ATLAS); the DSH plugin id keeps the ecosystem's unscoped `dsh-*` form.
 
 Every reference it draws is a **clickable link** (the theme's link colour, so blue in dark mode), and a **session** link jumps straight to that session.
 

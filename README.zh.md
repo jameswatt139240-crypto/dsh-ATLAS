@@ -2,13 +2,13 @@
 
 [English](README.md) · **简体中文**
 
-本项目属于 **Side Quest（支线任务）** 工作室（**Side Quest Labs**）—— npm 范围 `@sidequest-007/*`，仓库 [`jameswatt139240-crypto/dsh-ATLAS`](https://github.com/jameswatt139240-crypto/dsh-ATLAS)；**DSH 插件 id 沿用生态惯例的无 scope 形式 `dsh-*`**。
+在**内置 `@`** 之上：行区间如 `@src/a.ts:12-40`、Skill、插件与任意 git 仓库作为可选来源，并在发送前显示每条引用要花多少 token。
 
 <img src="assets/diagrams/atlas-overview.svg" alt="dsh-ATLAS：一个 @ 触发位、五个内置类别加内置的 git 类别，以及任何插件都能注册的自己的类别" width="880">
 
-**AT Last, All Sources.**
+**AT Last, All Sources.** **一 @ 即达。**
 
-**一 @ 即达。**
+本项目属于 **Side Quest（支线任务）** 工作室（**Side Quest Labs**）—— npm 范围 `@sidequest-007/*`，仓库 [`jameswatt139240-crypto/dsh-ATLAS`](https://github.com/jameswatt139240-crypto/dsh-ATLAS)；**DSH 插件 id 沿用生态惯例的无 scope 形式 `dsh-*`**。
 
 任何插件都能注册自己的类别，其余交给 Atlas；它画出的每个引用都是**可点的链接**（主题链接色，暗色下即蓝），**会话**链接点一下直接跳过去。
 
