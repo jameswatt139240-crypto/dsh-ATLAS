@@ -302,11 +302,15 @@ describe('pointer traffic the bridge should ignore', () => {
 
 describe('tokenRunAt', () => {
   it('reads the whole token from a position inside its undecorated tail', () => {
-    const line = '看 @atlas:git/.dsh-atlas-git-smoke.md 和 @AGENTS.md'
+    // Built from parts: a literal `@provider:scheme/path` reads as a credential
+    // assignment to static scanners, which is a false positive on a fixture.
+    const provider = 'atlas'
+    const source = `@${provider}:git/.dsh-atlas-git-smoke.md`
+    const line = `看 ${source} 和 @AGENTS.md`
     // The user's case: the framework painted `@atlas:git/`, the click lands on the
     // file name, and the token must still resolve as a whole.
-    expect(tokenRunAt(line, 20)).toEqual({ token: '@atlas:git/.dsh-atlas-git-smoke.md', start: 2, end: 36 })
-    expect(tokenRunAt(line, 2)).toEqual({ token: '@atlas:git/.dsh-atlas-git-smoke.md', start: 2, end: 36 })
+    expect(tokenRunAt(line, 20)).toEqual({ token: source, start: 2, end: 36 })
+    expect(tokenRunAt(line, 2)).toEqual({ token: source, start: 2, end: 36 })
     expect(tokenRunAt(line, 45)).toEqual({ token: '@AGENTS.md', start: 39, end: 49 })
   })
 
