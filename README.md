@@ -46,6 +46,24 @@ dsh plugin --profile web add @sidequest-007/dsh-atlas
 
 Restart `dsh web` after installing or updating so the Host and the browser client load the same version. Then type `@` in the composer.
 
+## Coming from Cursor?
+
+Cursor's `@` menu taught a lot of people to type `@file`, `@folder`, `@Chats`, `@Commit`. The DSH composer resolves `@path` and `@label` on its own. This plugin widens that menu to the shape you already expect, and adds the two things Cursor does not do:
+
+| | Cursor | DSH built-in | dsh-ATLAS |
+|---|:---:|:---:|:---:|
+| `@file` | yes | yes | yes |
+| `@folder`, with `/` to descend | yes | yes | yes |
+| previous conversations | `@Chats` | `@label` | yes |
+| git diff | `@Commit` / `@Branch` | — | `@git` |
+| a skill as a source | via `/` | — | yes |
+| a plugin as a source | — | — | yes |
+| **line range** `@src/a.ts:12-40` | — | — | **yes** |
+| **token cost, before you send** | — | — | **yes** |
+| `@Terminals`, `@Browser` | yes | — | — |
+
+The last two rows are the argument. In an editor, attaching `@db.ts` to reach one function drags the whole file into the window, and you find out what it cost once the window is already full. Here you write `@src/db.ts:88-140`, the dock prices it at `~348 tokens`, and it stays 348 — `TOKENS_PER_LINE = 12`, capped by the whole-file estimate, so an over-long range can never look cheaper than the file itself.
+
 ## The categories
 
 The menu keeps the category rows — five built in, plus the bundled `@git` — in its **bottom band**, the rows nearest the composer, so pressing `@` opens on them rather than on whatever else shares the trigger.
