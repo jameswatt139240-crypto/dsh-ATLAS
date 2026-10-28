@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.0.10] - 2026-10-28
+
+### Changed
+
+- **This is `1.0.9-port.9`, promoted to `latest`.** The four `port` builds fixed
+  real defects: a history palette that had no surface of its own (it asked for a
+  token this shell never defines, so the fallback `transparent` applied and the
+  transcript read straight through the dialog), eight more tokens with the same
+  problem — every border, rule and frame that used them had been invisible — and
+  a `lib/` that had fallen behind the sources, so one published tarball carried an
+  older client than the code it claimed to be.
+
+  All of that was reachable only through the `port` dist-tag. A plain
+  `dsh plugin add @sidequest-007/dsh-atlas`, and every market install, kept
+  handing out the 2026-09-27 build. `latest` now points here, so both paths agree.
+
+### Unchanged
+
+- No runtime changes since `1.0.9-port.9` — the same `lib/`, the same tests
+  (1040 passed, 1 skipped; 94.87% statement, 90.13% branch). This release moves
+  the version number and the dist-tag to which it publishes, nothing else.
+
 ## [1.0.9-port.9] - 2026-10-27
 
 ### Fixed
