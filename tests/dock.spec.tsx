@@ -350,4 +350,20 @@ describe('reference cost helpers', () => {
     expect(referenceCost({ relative: 'big', exists: true, kind: 'file', size: 40000 }))
       .toEqual({ tokens: 10000, warn: true })
   })
+
+  it('prices a line range by its line count, never above the whole file', () => {
+    const file = { relative: 'src/a.ts', exists: true as const, kind: 'file' as const, size: 400_000 }
+    // 29 lines at the per-line estimate; the file itself is far heavier.
+    expect(referenceCost(file, { start: 12, end: 40 })).toEqual({ tokens: 348, warn: false })
+    // One line.
+    expect(referenceCost(file, { start: 7, end: 7 })).toEqual({ tokens: 12, warn: false })
+    // A range spanning most of the file is still capped by the whole-file figure.
+    expect(referenceCost({ relative: 'tiny.ts', exists: true, kind: 'file', size: 40 }, { start: 1, end: 900 }))
+      .toEqual({ tokens: 10, warn: false })
+    // A long range keeps the file's own figure once the estimate would exceed it.
+    expect(referenceCost({ relative: 'mid.ts', exists: true, kind: 'file', size: 4_000 }, { start: 1, end: 900 }))
+      .toEqual({ tokens: 1000, warn: false })
+    // The warning threshold applies to the range estimate too.
+    expect(referenceCost(file, { start: 1, end: 5_000 })).toEqual({ tokens: 60_000, warn: true })
+  })
 })

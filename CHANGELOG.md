@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.0.11] - 2026-10-28
+
+### Fixed
+
+- **A line-range reference was priced as if it were the whole file.** The dock
+  computed a reference's token cost from the file's byte size, which is the only
+  fact the Host has without opening it — so `@src/db.ts:88-140` was quoted at the
+  full weight of `db.ts` and became, by a wide margin, the most expensive-looking
+  row in a draft that asked the agent for 53 lines. A range is now priced by its
+  line count, and never above the file's own figure. The estimate stays an
+  estimate: the Host still opens nothing, which is what keeps the reference a
+  marker rather than a copy of the file.
+
+### Changed
+
+- `description` now names the line ranges and the per-reference cost, which is
+  what the plugin actually adds over the built-in `@`.
+- `dsh.plugin.json` carried `1.0.9-port.9` as its version while `package.json`
+  said `1.0.10`. Both agree again.
+
 ## [1.0.10] - 2026-10-28
 
 ### Changed

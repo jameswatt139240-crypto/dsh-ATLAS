@@ -11,6 +11,7 @@ import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-cli
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { AtFileSettings, ReferenceInfo } from '../contract.ts'
 import { isProtectedMentionToken } from '../paste.ts'
+import type { LineRange } from '../tokens.ts'
 import { lineRangeLabel, MENTION_PATTERN, PLUGIN_MENTION_PATTERN, splitLineRange } from '../tokens.ts'
 import type { ReferenceLink } from './reference-links.ts'
 import type { MentionKind } from './source.ts'
@@ -40,18 +41,44 @@ export interface AtFileDockInjected {
 /** Approximate bytes per token for text files (the dock's cost hint). */
 export const BYTES_PER_TOKEN = 4
 
+/**
+ * Approximate tokens per source line, used when the reference carries a line
+ * range. The Host never opens the referenced file, so the exact span size is
+ * unknowable here; this constant is what turns a line COUNT into a plausible
+ * cost. The estimate is always capped by the whole-file figure, so a range can
+ * never be quoted as heavier than the file that contains it.
+ */
+export const TOKENS_PER_LINE = 12
+
 /** References heavier than this many tokens are flagged in the dock. */
 export const COST_WARN_TOKENS = 8_000
 
 /**
  * Approximate context cost of one reference, or undefined when there is nothing
  * to price (missing path, directory, or a file whose size is unknown).
+ *
+ * A reference with a line range is priced by its line count, not by the file's
+ * size: `@src/a.ts:12-40` asks the agent for 29 lines, and quoting the whole
+ * file's cost there made a narrow reference look like the most expensive thing
+ * in the draft. Without a range the file's size is the only fact available and
+ * is still the best answer.
  * @param info - the host-inspected facts for this reference, when available.
+ * @param lines - the inclusive line range on this reference, when it has one.
  * @returns the token estimate and whether it exceeds the warning threshold.
  */
-export function referenceCost(info: ReferenceInfo | undefined): { readonly tokens: number; readonly warn: boolean } | undefined {
-  if (info === undefined || !info.exists || info.kind !== 'file' || info.size === undefined) return undefined
-  const tokens = Math.ceil(info.size / BYTES_PER_TOKEN)
+export function referenceCost(
+  info: ReferenceInfo | undefined,
+  lines?: LineRange,
+): { readonly tokens: number; readonly warn: boolean } | undefined {
+  if (info === undefined || !info.exists || info.kind !== 'file') return undefined
+  const whole = info.size === undefined ? undefined : Math.ceil(info.size / BYTES_PER_TOKEN)
+  if (lines === undefined) {
+    if (whole === undefined) return undefined
+    return { tokens: whole, warn: whole > COST_WARN_TOKENS }
+  }
+  const count = lines.end - lines.start + 1
+  const estimate = count * TOKENS_PER_LINE
+  const tokens = whole === undefined ? estimate : Math.min(whole, estimate)
   return { tokens, warn: tokens > COST_WARN_TOKENS }
 }
 
@@ -220,7 +247,7 @@ export function FilesDock({ input, inputActions, onOpen, requestInspect, useScop
     <div className="dsh_atFile_rail" role="group" aria-label={t('dock.aria')} data-atlas-dock>
       {mentions.map(mention => {
         const info = infoByRelative.get(referenceKey(mention.relative ?? ''))
-        const cost = referenceCost(info)
+        const cost = referenceCost(info, mention.lines)
         const missing = info !== undefined && !info.exists
         // A hand-typed directory (`@Eason`) decodes as a FILE token — the syntax
         // decides by the trailing separator — but the Host's own inspection of that
