@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.0.12] - 2026-10-28
+
+### Fixed
+
+- **The one-sentence definition disappeared from the first screen, again.** It was
+  added above the masthead, then a later commit about the plugin this one replaces
+  removed the same line as unrelated collateral — the diff dropped it without
+  saying so in the message. Someone arriving from a market card was back to reading
+  a studio credit and a pun before learning what the plugin does. Restored in both
+  languages, still outside the five-line masthead window the publish gate pins.
+
 ## [1.0.11] - 2026-10-28
 
 ### Fixed
