@@ -2,8 +2,6 @@
 
 [English](README.md) · **简体中文**
 
-在**内置 `@`** 之上：行区间如 `@src/a.ts:12-40`、Skill、插件与任意 git 仓库作为可选来源，并在发送前显示每条引用要花多少 token。
-
 本项目属于 **Side Quest（支线任务）** 工作室（**Side Quest Labs**）—— npm 范围 `@sidequest-007/*`，仓库 [`jameswatt139240-crypto/dsh-ATLAS`](https://github.com/jameswatt139240-crypto/dsh-ATLAS)；**DSH 插件 id 沿用生态惯例的无 scope 形式 `dsh-*`**。
 
 <img src="assets/diagrams/atlas-overview.svg" alt="dsh-ATLAS：一个 @ 触发位、五个内置类别加内置的 git 类别，以及任何插件都能注册的自己的类别" width="880">
@@ -26,7 +24,7 @@ DeepSeek Harness Web 界面的**统一 `@` 提及**插件：在输入框输入 `
 
 它基于 [`dsh-at-file`](https://github.com/FSMargoo/dsh-at-file)（MIT）扩展而来：保留原有的工作区路径索引、文件过滤规则与粘贴保护，并新增四个类别、类别菜单与快捷键、混合结果、分组折叠，以及三个模型侧查询工具。
 
-> `dsh-atlas` 与 `dsh-at-file` 都占用输入框的 `@` 触发位。请**二选一**，不要同时安装。
+> **从 `dsh-at-file` 过来？** 它最后一次提交是 2026-09-01，在当前的 Harness 上已经起不来：`ctx.settings.register` 不再是函数，插件加载时即抛错、条目被静默丢弃（[上游 #45](https://github.com/FSMargoo/dsh-at-file/issues/45)，2026-09-25 至今未关；修复 PR [#47](https://github.com/FSMargoo/dsh-at-file/pull/47) 从 2026-10-19 躺到现在）。`dsh-atlas` 就是同一套文件索引搬到当前 API 上——工作区路径索引、过滤规则、粘贴保护都还在，再加上前面那些类别。二者占用同一个触发位，装一个。
 
 ## 安装
 

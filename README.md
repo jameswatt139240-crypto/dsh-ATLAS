@@ -2,8 +2,6 @@
 
 **English** · [简体中文](README.zh.md)
 
-Beyond the **built-in `@`**: line ranges like `@src/a.ts:12-40`, skills, plugins and any git repo as source groups — with the approximate token cost of each reference shown before you send.
-
 A **Side Quest** project (工作室：支线任务, **Side Quest Labs**) — npm scope `@sidequest-007/*`, repository [`jameswatt139240-crypto/dsh-ATLAS`](https://github.com/jameswatt139240-crypto/dsh-ATLAS); the DSH plugin id keeps the ecosystem's unscoped `dsh-*` form.
 
 <img src="assets/diagrams/atlas-overview.svg" alt="dsh-ATLAS: one @ trigger, five built-in categories plus the bundled git category, and a category any plugin can register" width="880">
@@ -26,7 +24,7 @@ Unified `@` mentions for the DeepSeek Harness web GUI: type `@` in the composer 
 
 It extends [`dsh-at-file`](https://github.com/FSMargoo/dsh-at-file) (MIT), keeping its workspace path index, file filters, and paste protection, and adding four more categories, a category menu with shortcuts, mixed results, collapsible groups, and three model-facing query tools.
 
-> `dsh-atlas` and `dsh-at-file` both claim the composer's `@` trigger. Install **one of them**, not both.
+> **Coming from `dsh-at-file`?** Its last commit was 2026-09-01, and on current Harness it no longer starts: `ctx.settings.register` is not a function, so the plugin throws during load and its entries are dropped silently ([upstream #45](https://github.com/FSMargoo/dsh-at-file/issues/45), open since 2026-09-25; the fix has been sitting as [#47](https://github.com/FSMargoo/dsh-at-file/pull/47) since 2026-10-19). `dsh-atlas` is that same file index carried onto the current API — the workspace path index, the filters and the paste protection are all still here, with the categories above on top. Same trigger, so install one of the two.
 
 ## Install
 
