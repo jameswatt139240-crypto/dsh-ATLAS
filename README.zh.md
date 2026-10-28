@@ -2,6 +2,8 @@
 
 [English](README.md) · **简体中文**
 
+在**内置 `@`** 之上：行区间如 `@src/a.ts:12-40`、Skill、插件与任意 git 仓库作为可选来源，并在发送前显示每条引用要花多少 token。
+
 本项目属于 **Side Quest（支线任务）** 工作室（**Side Quest Labs**）—— npm 范围 `@sidequest-007/*`，仓库 [`jameswatt139240-crypto/dsh-ATLAS`](https://github.com/jameswatt139240-crypto/dsh-ATLAS)；**DSH 插件 id 沿用生态惯例的无 scope 形式 `dsh-*`**。
 
 <img src="assets/diagrams/atlas-overview.svg" alt="dsh-ATLAS：一个 @ 触发位、五个内置类别加内置的 git 类别，以及任何插件都能注册的自己的类别" width="880">
