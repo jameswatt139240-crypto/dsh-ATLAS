@@ -38,8 +38,8 @@ dsh plugin --profile web add github:jameswatt139240-crypto/dsh-ATLAS
 git clone https://github.com/jameswatt139240-crypto/dsh-ATLAS
 dsh plugin --profile web add link:/path/to/dsh-ATLAS
 
-# npm (published; `port` is the tag the ported builds ship under, `latest` stays 1.0.9)
-dsh plugin --profile web add @sidequest-007/dsh-atlas@1.0.9-port.9
+# npm (published; `latest` is the current release)
+dsh plugin --profile web add @sidequest-007/dsh-atlas
 ```
 
 Restart `dsh web` after installing or updating so the Host and the browser client load the same version. Then type `@` in the composer.
