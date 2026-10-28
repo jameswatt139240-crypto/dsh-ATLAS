@@ -311,6 +311,12 @@ pnpm run verify:publish  # publish-surface gate on its own
   run `npm publish --registry https://registry.npmjs.org` (a mirror such as
   `registry.npmmirror.com` cannot accept a publish).
 
+## If this replaced something you were using
+
+`dsh-at-file` stopped loading on Harness 0.2.x, and this carried its file index onto the current API. If that is why you are here, one thing helps more than a bug report: **a star**. The plugin markets sort by it, and a project sitting at zero reads as abandoned whether or not it is — a poor first impression for a plugin whose entire job is to be dependable about paths.
+
+→ [Star the repo](https://github.com/jameswatt139240-crypto/dsh-ATLAS) · [Report a bug](https://github.com/jameswatt139240-crypto/dsh-ATLAS/issues)
+
 ## Compatibility
 
 The plugin satisfies both generations of the Harness Typert codec validation (the installed build checks `codec.schema.parse`; the source checkout checks `codec.create()`), and opens referenced paths through `ctx.remote.session.openWorkspacePath`.

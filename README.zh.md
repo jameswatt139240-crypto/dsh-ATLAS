@@ -303,6 +303,12 @@ pnpm run verify:publish  # 单独运行发布面门禁
   DSH 源码检出，CI 里没有）。若要手动发布：`npm publish --registry https://registry.npmjs.org`
   （镜像如 `registry.npmmirror.com` 不能接收发布）。
 
+## 如果它替代了你原本在用的东西
+
+`dsh-at-file` 在 Harness 0.2.x 上已经加载不起来了，这个插件把它的文件索引接到了当前 API 上。如果你是因为这个来的，有一件事比提 issue 更有用：**一个 star**。插件市场的排序看它，而一个 0 star 的项目在别人眼里就是「没人维护」——不管它实际上有没有，这对一个主打「路径靠谱」的插件来说是很糟的第一印象。
+
+→ [给个 star](https://github.com/jameswatt139240-crypto/dsh-ATLAS) · [报个 bug](https://github.com/jameswatt139240-crypto/dsh-ATLAS/issues)
+
 ## 兼容性
 
 插件同时兼容两代 Harness 的 Typert codec 校验（安装版校验 `codec.schema.parse`，源码检出校验 `codec.create()`），并在运行时通过 `ctx.remote.session.openWorkspacePath` 打开引用路径。
