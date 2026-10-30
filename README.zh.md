@@ -2,6 +2,11 @@
 
 [English](README.md) · **简体中文**
 
+> [![npm version](https://img.shields.io/npm/v/@sidequest-007/dsh-atlas?label=npm&color=blue)](https://www.npmjs.com/package/@sidequest-007/dsh-atlas) [![downloads](https://img.shields.io/npm/dm/@sidequest-007/dsh-atlas?label=downloads%2Fmonth)](https://www.npmjs.com/package/@sidequest-007/dsh-atlas) [![license](https://img.shields.io/npm/l/@sidequest-007/dsh-atlas?color=green)](LICENSE) [![stars](https://img.shields.io/github/stars/jameswatt139240-crypto/dsh-ATLAS?color=yellow)](https://github.com/jameswatt139240-crypto/dsh-ATLAS/stargazers)
+
+**一个 `@` 跳到任何来源；一个 `Esc` 把整段会话倒着走，一轮一格。**
+输入 `@` 引用任何来源；按 `Esc` 站进自己的历史：输入框变成一把阶梯，右侧帧游标显示你正停在哪一轮（`第 3 / 11 轮`），回车把这一轮的内容交回给你复用。`Ctrl+Shift+H` 打开可搜索的历史调色板。
+
 本项目属于 **Side Quest（支线任务）** 工作室（**Side Quest Labs**）—— npm 范围 `@sidequest-007/*`，仓库 [`jameswatt139240-crypto/dsh-ATLAS`](https://github.com/jameswatt139240-crypto/dsh-ATLAS)；**DSH 插件 id 沿用生态惯例的无 scope 形式 `dsh-*`**。
 
 <img src="assets/diagrams/atlas-overview.svg" alt="dsh-ATLAS：一个 @ 触发位、五个内置类别加内置的 git 类别，以及任何插件都能注册的自己的类别" width="880">
@@ -38,8 +43,8 @@ dsh plugin --profile web add github:jameswatt139240-crypto/dsh-ATLAS
 git clone https://github.com/jameswatt139240-crypto/dsh-ATLAS
 dsh plugin --profile web add link:/path/to/dsh-ATLAS
 
-# npm 包（已发布；`port` 是移植版使用的 tag，`latest` 仍是 1.0.9）
-dsh plugin --profile web add @sidequest-007/dsh-atlas@1.0.9-port.7
+# npm 包（已发布；`latest` 自 2026-10-28 起是 1.0.12，`port` 是移植版使用的 tag）
+dsh plugin --profile web add @sidequest-007/dsh-atlas@1.0.12
 ```
 
 安装或更新后**重启 `dsh web`**，确保 Host 与浏览器客户端都加载同一版本。然后在输入框打 `@`。

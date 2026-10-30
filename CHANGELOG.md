@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.1.0] - 2026-10-27
+
+The first stable release of the history line. Same code as `1.0.9-port.9`, published
+under `latest` so a plain `dsh plugin add @sidequest-007/dsh-atlas` no longer hands out the
+old 1.0.9 composer.
+
+### Added
+
+- **`Esc` walks the session back, one turn at a time.** The composer turns into a ladder, a
+  frame cursor shows where you stand (`第 3 / 11 轮`), and `Enter` hands that turn back for
+  reuse. One stop per turn — the same unit the GUI's own turn rail counts, so the two
+  numbers can never disagree.
+- **`Ctrl+Shift+H`** (and `Ctrl+H`) opens a searchable palette over the same history.
+- **`@` references every source**: files, folders, skills, past sessions, installed plugins,
+  workspace git changes, and any category a third-party plugin registers through `ctx.atlas`.
+  Paths outside the workspace work and carry a scope badge.
+- Folder picker is keyboard-only (arrows, Tab, paging, create folder), recent folders are
+  remembered, and `@atlas` resolves registrations from other plugins.
+- Fixed: the palette (and eight other surfaces) referenced theme tokens this shell does not
+  define, so they resolved to `transparent` — the history dialog had no surface of its own and
+  the transcript read through it.
+
+### Notes
+
+- Requires dsh `0.2.0-rc.2`.
+- Upgrading in place from `1.0.0` / `1.0.8` / `1.0.9` is verified: settings and session files
+  stay byte-identical, boot is clean, and rollback is one command.
+
 ## [1.0.9-port.9] - 2026-10-27
 
 ### Fixed

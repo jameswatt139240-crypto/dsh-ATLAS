@@ -1,7 +1,7 @@
 {
   "name": "@sidequest-007/dsh-atlas",
-  "description": "AT Last, All Sources. One @ to jump anywhere \u2014 and Esc to walk the session back, one turn at a time.",
-  "version": "1.0.9-port.9",
+  "description": "Esc walks the session back one turn at a time, and one @ references any source (files, folders, skills, chats, plugins, git) \u2014 a DeepSeek Harness (dsh) composer plugin.",
+  "version": "1.1.0",
   "license": "MIT",
   "author": "Side Quest Labs",
   "publishConfig": {
@@ -21,7 +21,14 @@
     "keyboard",
     "navigation",
     "session-history",
-    "esc"
+    "esc",
+    "deepseek",
+    "harness",
+    "mention-anything",
+    "command-palette",
+    "history-navigation",
+    "keyboard-shortcuts",
+    "dsh-atlas"
   ],
   "homepage": "https://github.com/jameswatt139240-crypto/dsh-ATLAS#readme",
   "bugs": {

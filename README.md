@@ -2,6 +2,14 @@
 
 **English** · [简体中文](README.zh.md)
 
+> [![npm version](https://img.shields.io/npm/v/@sidequest-007/dsh-atlas?label=npm&color=blue)](https://www.npmjs.com/package/@sidequest-007/dsh-atlas) [![downloads](https://img.shields.io/npm/dm/@sidequest-007/dsh-atlas?label=downloads%2Fmonth)](https://www.npmjs.com/package/@sidequest-007/dsh-atlas) [![license](https://img.shields.io/npm/l/@sidequest-007/dsh-atlas?color=green)](LICENSE) [![stars](https://img.shields.io/github/stars/jameswatt139240-crypto/dsh-ATLAS?color=yellow)](https://github.com/jameswatt139240-crypto/dsh-ATLAS/stargazers)
+
+**One `@` jumps anywhere. One `Esc` walks the session back — one turn at a time.**
+Type `@` to reference any source. Press `Esc` to stand inside your own history: the
+composer turns into a ladder, the right rail shows which turn you are on (`第 3 / 11 轮`),
+and `Enter` hands that turn back to you for reuse. `Ctrl+Shift+H` opens a searchable
+palette over the same history.
+
 A **Side Quest** project (工作室：支线任务, **Side Quest Labs**) — npm scope `@sidequest-007/*`, repository [`jameswatt139240-crypto/dsh-ATLAS`](https://github.com/jameswatt139240-crypto/dsh-ATLAS); the DSH plugin id keeps the ecosystem's unscoped `dsh-*` form.
 
 <img src="assets/diagrams/atlas-overview.svg" alt="dsh-ATLAS: one @ trigger, five built-in categories plus the bundled git category, and a category any plugin can register" width="880">
@@ -38,8 +46,8 @@ dsh plugin --profile web add github:jameswatt139240-crypto/dsh-ATLAS
 git clone https://github.com/jameswatt139240-crypto/dsh-ATLAS
 dsh plugin --profile web add link:/path/to/dsh-ATLAS
 
-# npm (published; `port` is the tag the ported builds ship under, `latest` stays 1.0.9)
-dsh plugin --profile web add @sidequest-007/dsh-atlas@1.0.9-port.7
+# npm (published; `latest` is 1.0.12 since 2026-10-28, `port` carries the ported builds)
+dsh plugin --profile web add @sidequest-007/dsh-atlas@1.0.12
 ```
 
 Restart `dsh web` after installing or updating so the Host and the browser client load the same version. Then type `@` in the composer.

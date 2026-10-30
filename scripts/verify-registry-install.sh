@@ -35,6 +35,14 @@ say() { printf '%s\n' "$*"; }
 fail() { FAILED=1; printf 'FAIL  %s\n' "$*"; }
 pass() { printf 'ok    %s\n' "$*"; }
 
+# Safety: this script rm -rf's HOME_DIR (section 3). DSH_HOME is inherited by dsh's
+# own terminal tooling, so the default above silently resolves to the LIVE harness
+# home (~/.dsh) and the wipe destroys profiles/, sessions/ and the running host.
+if [ "$(realpath -m "$HOME_DIR")" = "$(realpath -m "$HOME/.dsh")" ]; then
+  say "REFUSING: HOME_DIR=$HOME_DIR is the live Harness home; unset DSH_HOME or point it at a temp dir"
+  exit 2
+fi
+
 # --- 1. the published record (with propagation tolerance) --------------------
 say "== registry record for $PKG@$VERSION"
 META=""
