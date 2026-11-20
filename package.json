@@ -1,6 +1,6 @@
 {
   "name": "@sidequest-007/dsh-atlas",
-  "description": "Esc walks the session back one turn at a time, and one @ references any source (files, folders, skills, chats, plugins, git) \u2014 a DeepSeek Harness (dsh) composer plugin.",
+  "description": "AT Last, All Sources. One @ to jump anywhere — and Esc to walk the session back, one turn at a time.",
   "version": "1.1.0",
   "license": "MIT",
   "author": "Side Quest Labs",

@@ -35,7 +35,7 @@ export declare class AtFileRuntime extends TypertRemoteService {
      */
     constructor(ctx: Context, config: ResolvedConfig, readSettings: () => AtFileSettings, writeSettings: (update: AtFileSettingsUpdate) => Promise<AtFileSettings>, 
     /** The session's out-of-workspace access (see src/external.ts). */
-    externalAccessFor?: (agent: Agent) => ExternalAccess);
+    externalAccessFor: (agent: Agent) => ExternalAccess);
     /** One TTL for the workspace index cache (matches the client cache). */
     private static readonly FILE_CACHE_TTL_MS;
     /** Read the resolved durable settings through the plugin-owned wire. */

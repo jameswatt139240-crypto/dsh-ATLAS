@@ -102,7 +102,7 @@ export interface MentionSourceDeps {
     /** Locale binder for time/tier labels (defaults to zh copy). */
     t?: (key: string, params?: Record<string, string>) => string;
     /** Record one referenced path into the session workspace's recent list. */
-    onRecent?(sessionId: SessionId, relative: string): void;
+    onRecent?(sessionId: SessionId, absolute: string, relative: string): void;
     /** Record one pick in the cross-category usage counters. */
     onUsage?(sessionId: SessionId, kind: string, value: string): void;
     /** The live cross-category pick counters (highest count first). */

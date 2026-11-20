@@ -3,7 +3,7 @@
  * calls shell out to git, so the interesting cases are the ones where git
  * answers something unexpected (a rename, a binary, no repository at all).
  */
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -135,5 +135,34 @@ describe('GIT_RESOLVE_PROVIDER', () => {
       { sessionId: 's1' as never, signal: signal() },
     )
     expect(body).toBe('')
+  })
+})
+
+describe('the status shapes git can emit', () => {
+  it('reads a line whose two status columns are blank as a modification', () => {
+    // `--porcelain` never emits this, but a hand-written fixture or a future
+    // status format can; the code is empty and the path still has to survive.
+    expect(parseGitStatus('   plain.txt\n')).toEqual([{ path: 'plain.txt', status: 'M' }])
+  })
+
+  it('reports no changes when git cannot even be started', async () => {
+    // A cwd with a NUL byte makes execFile throw synchronously, before any
+    // process exists: the provider must answer "no changes", not reject.
+    expect(await readGitChanges('bad\u0000cwd', signal())).toEqual([])
+  })
+})
+
+describe('a repository that has no commit yet', () => {
+  it('reports the untracked files without line counts', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-atlas-nohead-'))
+    try {
+      spawnSync('git', ['init', '-q'], { cwd: root })
+      writeFileSync(join(root, 'fresh.txt'), 'one\ntwo\n', 'utf8')
+      const changes = await readGitChanges(root, signal())
+      expect(changes.map(change => change.path)).toContain('fresh.txt')
+      expect(changes.find(change => change.path === 'fresh.txt')?.added).toBeUndefined()
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 })

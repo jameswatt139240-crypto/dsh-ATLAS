@@ -550,6 +550,24 @@ describe('a caret the index cannot place', () => {
     }
   })
 
+  it('answers the line end when the caret points at a child that holds no indexed text', () => {
+    const root = editor('<p><span>@a.ts</span><br></p>')
+    try {
+      // The break is a child of the line but owns no text, so the caret's offset
+      // inside it is the end of everything the line says.
+      expect(tokenAtPoint(root, root.firstElementChild as HTMLElement, 1)?.local).toBe(5)
+    } finally {
+      root.remove()
+    }
+  })
+
+  it('cuts one token at the next @ inside the same word', () => {
+    // A caret inside `@a` stops the run at the next `@`, so the two references
+    // are not fused into one.
+    expect(tokenRunAt('@a@b@c', 1)).toEqual({ token: '@a', start: 0, end: 2 })
+    expect(tokenRunAt('@a@b@c', 3)).toEqual({ token: '@b', start: 2, end: 4 })
+  })
+
   it('skips a bare @ while still listing the tokens beside it', () => {
     const root = editor('<p>@</p><p>see @notes.md now</p>')
     try {
@@ -844,5 +862,54 @@ describe('the draft bridge', () => {
     click(line.parentElement as HTMLElement)
     await settle()
     expect(opened).toHaveBeenCalledWith({ kind: 'file', path: 'README.md' })
+  })
+})
+
+describe('structure changes and teardown', () => {
+  it('re-attaches when a composer root appears inside an editor', async () => {
+    const bridge = mountBridge([EXISTS('AGENTS.md')])
+    const editor = bridge.host.querySelector('[data-lexical-editor="true"]') as HTMLElement
+    const added = document.createElement('span')
+    added.textContent = ' typed later'
+    flushSync(() => { editor.appendChild(added) })
+    await settle()
+    expect(bridge.host.contains(added)).toBe(true)
+    bridge.root.unmount()
+  })
+
+  it('drops a repaint that was queued before the bridge went away', async () => {
+    const bridge = mountBridge([EXISTS('AGENTS.md')])
+    const editor = bridge.host.querySelector('[data-lexical-editor="true"]') as HTMLElement
+    flushSync(() => { editor.appendChild(document.createElement('span')) })
+    // The mutation queued one repaint; the session switches before it runs.
+    bridge.root.unmount()
+    await settle()
+    // Nothing was painted over the torn-down document, and nothing threw.
+    expect(document.querySelector(DRAFT_HIGHLIGHT)).toBeNull()
+  })
+
+  it('has no editor cursor to clear when the pointer never entered', () => {
+    const bridge = mountBridge([EXISTS('AGENTS.md')])
+    expect(() => { bridge.root.unmount() }).not.toThrow()
+  })
+})
+
+describe('the hover it is still holding when the bridge goes away', () => {
+  it('clears the editor cursor it set, instead of leaving the editor marked', async () => {
+    // The pointer made the editor look like a link host; unmounting while the
+    // pointer is still over it must take that mark back off.
+    const bridge = mountBridge([EXISTS('AGENTS.md')])
+    const editor = bridge.host.querySelector('[data-lexical-editor="true"]') as HTMLElement
+    const span = editor.querySelector('span') as HTMLElement
+    try {
+      stubCaret(textOf(span), 2)
+      moveOver(span)
+      await settle()
+      expect(editor.style.cursor).toBe('pointer')
+    } finally {
+      flushSync(() => { bridge.root.unmount() })
+      restoreCaret?.()
+    }
+    expect(editor.style.cursor).toBe('')
   })
 })

@@ -209,10 +209,10 @@ export function tokenAtPoint(root: Element, node: Node, offset: number): InlineT
   const run = tokenRunAt(index.text, local)
   if (run === undefined) return undefined
   const head = [...line.querySelectorAll(TEXT_REF_SELECTOR)]
-    .find(span => startOf(index, span) === run.start && (span.textContent ?? '').length > 0)
+    .find(span => startOf(index, span) === run.start && (span.textContent as string).length > 0)
   const settled = settledIn(index.text, run.end, line === root.lastElementChild)
   if (head === undefined) return { ...run, line, index, local, settled }
-  return { ...run, line, index, local, settled, decoratedEnd: run.start + (head.textContent ?? '').length }
+  return { ...run, line, index, local, settled, decoratedEnd: run.start + (head.textContent as string).length }
 }
 
 /** One `@` token of the composer, with the line it lives in. */
@@ -449,6 +449,7 @@ export function paintDraftLinks(decide: (token: DraftToken) => DraftPaint | unde
     if (decision === undefined) continue
     const from = pointAt(token.index, token.start)
     const to = pointAt(token.index, token.end)
+    /* v8 ignore next -- a token's span is read from the same text these points come from, so both always land inside it. */
     if (from === undefined || to === undefined) continue
     const range = token.line.ownerDocument.createRange()
     range.setStart(from.node, from.offset)

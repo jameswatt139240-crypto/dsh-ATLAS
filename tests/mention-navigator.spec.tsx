@@ -1367,3 +1367,151 @@ describe('MentionNavigator group toggle', () => {
     root.unmount()
   })
 })
+describe('a group row that cannot fold, and a category claimed mid-draft', () => {
+  it('does nothing for a header row that carries no group key', () => {
+    const mounted = mount(INPUT, menu('p', [{ name: 'A-folder', value: '/a', mentionKind: 'dir-group' }]))
+    const row = document.createElement('div')
+    row.id = 'dsh-slash-option-atlas-0'
+    document.body.appendChild(row)
+    try {
+      row.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+      expect(mounted.toggleGroup).not.toHaveBeenCalled()
+      expect(mounted.update).not.toHaveBeenCalled()
+    } finally {
+      row.remove()
+      flushSync(() => { mounted.root.unmount() })
+    }
+  })
+
+  it('carries a claimed phase through a category pick and a fold that has to refetch', () => {
+    const claimed = { draft: '@p', draftRev: 4, phase: 'claimed' } as MentionNavigationInput
+    const mounted = mount(claimed, menu('p', [{ name: 'C-plugin', value: 'plugin:', mentionKind: 'category' }]))
+    const row = document.createElement('div')
+    row.id = 'dsh-slash-option-atlas-0'
+    document.body.appendChild(row)
+    try {
+      row.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+      expect(mounted.setDraft).toHaveBeenCalledWith('@plugin:')
+    } finally {
+      row.remove()
+      flushSync(() => { mounted.root.unmount() })
+    }
+
+    // A fold whose cache is not settled has to dismiss and re-track, and the tier
+    // the composer reported must survive that round trip.
+    const refetching = mount(claimed, menu('p', [{ name: 'A-folder', value: '/a', mentionKind: 'dir-group', groupKey: '/a' }]), undefined, () => undefined)
+    const header = document.createElement('div')
+    header.id = 'dsh-slash-option-atlas-0'
+    document.body.appendChild(header)
+    try {
+      header.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+      expect(refetching.track).toHaveBeenCalledWith('@p', 2, { tier: 'claimed' }, 4)
+    } finally {
+      header.remove()
+      flushSync(() => { refetching.root.unmount() })
+    }
+  })
+})
+
+describe('a fold applied to a draft that lost our group', () => {
+  it('leaves a draft without an atlas group untouched, and clamps only a row that is gone', () => {
+    const snapshot = {
+      ...menu('p', [{ name: 'A-folder', value: '/a', mentionKind: 'dir-group', groupKey: '/a' }]),
+    } as unknown as MenuState
+    // The draft the store hands back has lost our group (another source's menu
+    // replaced it) — the update must not invent one.
+    const draftWithoutGroup = { ...snapshot, groups: [{ source: 'git', status: 'ready', items: [] }] } as unknown as MenuState
+    const draftWithClamp = {
+      ...snapshot,
+      groups: [{ source: 'atlas', status: 'ready', items: [{ name: 'stale', value: 'x', mentionKind: 'file' }] }],
+      highlight: { source: 'atlas', index: 7 },
+    } as unknown as MenuState
+    const seen: MenuState[] = []
+    let draft = draftWithoutGroup
+    const controller = {
+      menu: { getSnapshot: () => snapshot, subscribe: () => () => undefined, update: (fn: (value: MenuState) => void) => { fn(draft); seen.push(draft) } },
+      track: () => undefined,
+      dismiss: () => undefined,
+    }
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    flushSync(() => {
+      root.render(
+        <MentionNavigator
+          controller={controller as unknown as MentionNavigatorProps['controller']}
+          useInput={selector => selector(INPUT)}
+          inputActions={{ setDraft: () => undefined }}
+          toggleGroup={() => undefined}
+          sessionId="s1"
+          rebuildRows={() => [{ name: 'inside', value: '/a/x', mentionKind: 'file' }]}
+        />,
+      )
+    })
+    const header = document.createElement('div')
+    header.id = 'dsh-slash-option-atlas-0'
+    document.body.appendChild(header)
+    try {
+      header.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+      // No atlas group: nothing was written into it.
+      expect(draftWithoutGroup.groups.map(group => group.source)).toEqual(['git'])
+      draft = draftWithClamp
+      header.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+      expect(draftWithClamp.highlight?.index).toBe(0)
+      expect((draftWithClamp.groups[0]!.items as unknown[]).length).toBe(1)
+      expect(seen).toHaveLength(2)
+    } finally {
+      header.remove()
+      flushSync(() => { root.unmount() })
+      container.remove()
+    }
+  })
+})
+
+describe('page keys over a menu that is missing what they need', () => {
+  it('scrolls the listbox itself when there is no row to move to', () => {
+    // No atlas group at all: the page key falls through to the raw scroll.
+    const bare = { ...menu(), groups: [{ source: 'git', status: 'ready', items: [] }] } as unknown as MenuState
+    const mounted = mount(INPUT, bare)
+    const listbox = document.createElement('div')
+    listbox.setAttribute('role', 'listbox')
+    Object.defineProperty(listbox, 'clientHeight', { value: 0, configurable: true })
+    document.body.appendChild(listbox)
+    try {
+      press(mounted.composer, 'PageDown')
+      // PAGE_ROWS * 32 is the fallback step when the box has no height yet.
+      expect(listbox.scrollTop).toBe(PAGE_ROWS * 32)
+      listbox.remove()
+      // And with no listbox element at all the key is simply absorbed.
+      press(mounted.composer, 'PageDown')
+    } finally {
+      listbox.remove()
+      flushSync(() => { mounted.root.unmount() })
+    }
+  })
+
+  it('keeps the smart highlight signature when the menu lost its hit', () => {
+    const hitless = { ...menu(), hit: null } as unknown as MenuState
+    // The anchor pass runs on an animation frame, so this test queues them itself
+    // and drives the one the mount asks for.
+    const frames: FrameRequestCallback[] = []
+    const realFrame = globalThis.requestAnimationFrame
+    const realCancel = globalThis.cancelAnimationFrame
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { frames.push(callback); return frames.length })
+    vi.stubGlobal('cancelAnimationFrame', () => undefined)
+    const mounted = mount(INPUT, hitless)
+    try {
+      // Render again through a draft change so the signature is recomputed from
+      // a snapshot that has no hit: the empty query is the signature's answer.
+      // The anchor pass runs on the next animation frame; jsdom has none, so the
+      // test drives it. A snapshot without a hit must still produce a signature
+      // (the empty query), and the pass must survive it.
+      frames.shift()?.(0)
+      expect(mounted.update).not.toHaveBeenCalled()
+    } finally {
+      flushSync(() => { mounted.root.unmount() })
+      vi.stubGlobal('requestAnimationFrame', realFrame)
+      vi.stubGlobal('cancelAnimationFrame', realCancel)
+    }
+  })
+})

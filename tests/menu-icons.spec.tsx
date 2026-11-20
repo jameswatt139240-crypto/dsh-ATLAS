@@ -41,12 +41,12 @@ function rectOf(element: Element, top: number, height: number, left = 0, width =
 }
 
 /** A menu state with our group ready, holding the given rows. */
-function menuState(items: readonly unknown[], open = true): MenuState {
+function menuState(items: readonly unknown[], open = true, status = 'ready'): MenuState {
   return {
     open,
     hit: { trigger: '@', query: '', position: 'leading', span: { start: 0, end: 1, draftRev: 1 } },
     generation: 1,
-    groups: [{ source: 'atlas', status: 'ready', items }],
+    groups: [{ source: 'atlas', status, items }],
     highlight: null,
   } as unknown as MenuState
 }
@@ -232,5 +232,19 @@ describe('MenuIcons', () => {
     const unknown = mount([{ mentionKind: 'file', value: 'a.ts' }])
     expect(unknown.host.querySelectorAll('.dsh_atlas_menuIcon')).toHaveLength(0)
     expect(document.querySelector('[class*="itemIcon"]')!.hasAttribute(HOST_ATTRIBUTE)).toBe(false)
+  })
+})
+
+describe('MenuIcons: a group that has not delivered its rows yet', () => {
+  it('draws nothing while the group is still pending', () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    liveRoots.add(root)
+    const state = menuState([{ key: 'a', label: 'a', icon: 'file', value: 'a' }], true, 'pending')
+    const useMenu = (select: (snapshot: MenuState) => unknown): unknown => select(state)
+    flushSync(() => { root.render(<MenuIcons {...({ useMenu } as unknown as MenuIconsProps)} />) })
+    flushSync(() => {})
+    expect(container.querySelector(`[${HOST_ATTRIBUTE}]`)).toBeNull()
   })
 })

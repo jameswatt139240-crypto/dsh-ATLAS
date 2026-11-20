@@ -518,6 +518,11 @@ describe('dsh-atlas host composition', () => {
         field: 'usage',
         value: [{ key: 'file:a', count: 1, at: 5 }, { key: 'file:b', count: 4, at: 1 }],
       })).toMatchObject({ usage: [{ key: 'file:b', count: 4, at: 1 }, { key: 'file:a', count: 1, at: 5 }] })
+      // Two picks with the SAME count fall back to how recently each was used.
+      expect(await runtime.updateSettings({
+        field: 'usage',
+        value: [{ key: 'file:a', count: 2, at: 1 }, { key: 'file:b', count: 2, at: 5 }],
+      })).toMatchObject({ usage: [{ key: 'file:b' }, { key: 'file:a' }] })
       expect(await runtime.updateSettings({
         field: 'externalRefs',
         value: [

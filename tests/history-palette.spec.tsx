@@ -575,3 +575,17 @@ describe('HistoryPalette', () => {
     root.unmount()
   })
 })
+
+describe('a turn nobody prompted', () => {
+  it('tags a reply whose turn the system opened', () => {
+    const { root } = mount(<HistoryPalette {...props({
+      // No user node for turn 2: the answer is the only trace of that turn.
+      table: { u1: userNode('a question', 1), a1: assistantNode('answer one', 1), a2: assistantNode('a scheduled report', 2) },
+    })} />)
+    press('h', { ctrlKey: true })
+    flushSync(() => {})
+    expect(rows()[0]).toContain('a scheduled report')
+    expect(rows()[0]).toContain(t('history.systemTag'))
+    root.unmount()
+  })
+})

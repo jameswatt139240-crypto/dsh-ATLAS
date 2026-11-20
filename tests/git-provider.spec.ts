@@ -25,6 +25,10 @@ describe('gitChangeItem', () => {
     })
   })
 
+  it('treats a missing removal count as zero rather than as a gap', () => {
+    expect(gitChangeItem({ path: 'c.ts', status: 'A', added: 4 })).toMatchObject({ preview: '+4 \u22120', badge: 'A' })
+  })
+
   it('marks an untracked path without inventing a diffstat', () => {
     expect(gitChangeItem({ path: 'b.txt', status: '??' })).toEqual({
       id: 'b.txt',

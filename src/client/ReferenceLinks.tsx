@@ -172,7 +172,7 @@ export function composerChipLink(
   host: Element,
   resolve: (label: string) => string | undefined = label => label,
 ): ReferenceLink | undefined {
-  const raw = (composerChipBody(host).getAttribute('title') ?? host.textContent ?? '').trim()
+  const raw = (composerChipBody(host).getAttribute('title') ?? (host.textContent as string)).trim()
   if (raw === '' || raw.startsWith('/')) return undefined
   const label = raw.startsWith('@') ? raw.slice(1) : raw
   const path = resolve(label)

@@ -61,6 +61,7 @@ export function MentionAd({ menu }: MentionAdProps) {
 
   const reposition = (): void => {
     const panel = panelRef.current
+    /* v8 ignore next -- every caller runs after the panel is committed; the guard only satisfies the ref's type. */
     if (panel === null) return
     const state = menu.getSnapshot()
     if (!state.open) {
@@ -95,6 +96,7 @@ export function MentionAd({ menu }: MentionAdProps) {
     const readyImg = readyImgRef.current
     if (currentReadyRef.current !== ready) {
       currentReadyRef.current = ready
+      /* v8 ignore next -- both images are mounted from the first commit on, so a half-attached pair cannot exist. */
       if (pendingImg !== null && readyImg !== null) {
         pendingImg.style.display = ready ? 'none' : 'block'
         readyImg.style.display = ready ? 'block' : 'none'

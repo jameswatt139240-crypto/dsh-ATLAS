@@ -128,6 +128,13 @@ describe('readWorkspaces', () => {
   })
 })
 
+describe('parseWorkspaces', () => {
+  it('names a ledger row that was written without a directory separator', () => {
+    const rows = parseWorkspaces(JSON.stringify({ tables: { workspaces: { a: { path: 'solo' } } } }))
+    expect(rows).toEqual([{ path: 'solo', name: 'solo', reason: 'recent' }])
+  })
+})
+
 describe('rankRecentFolders', () => {
   const cwd = 'E:/Eason/Rust/DSH/dsh-atlas'
 
@@ -145,6 +152,15 @@ describe('rankRecentFolders', () => {
       ['atlas-tools', 'family'],
       ['Away', 'recent'],
     ])
+  })
+
+  it('drops a candidate with no path instead of ranking it', () => {
+    // An empty path is not under anything, so it keeps the weakest reason.
+    expect(rankRecentFolders([{ path: '', name: '', reason: 'recent' }], cwd).map(row => row.reason)).toEqual(['recent'])
+  })
+
+  it('treats a candidate with no path at all as unrelated', () => {
+    expect(rankRecentFolders([folder('/')], cwd).map(row => row.reason)).toEqual(['recent'])
   })
 
   it('recognises an enclosing project as a child even when it is not the immediate parent', () => {
@@ -190,5 +206,17 @@ describe('rankRecentFolders', () => {
   it('reads a bare drive root without inventing a parent', () => {
     const ranked = rankRecentFolders([folder('E:/')], 'E:/')
     expect(ranked).toEqual([])
+  })
+})
+
+describe('paths that are not canonical yet', () => {
+  it('names a folder that has no separator, and treats its parent as none', () => {
+    // A hand-written ledger entry can be a bare name: it still gets a name, and
+    // it has no parent to claim the sibling tier with.
+    const ranked = rankRecentFolders([folder('solo')], 'E:/Eason/Rust/DSH/dsh-atlas')
+    expect(ranked.map(row => [row.name, row.reason])).toEqual([['solo', 'recent']])
+    // The workspace itself is never offered back, so the bare name disappears.
+    const bare = rankRecentFolders([folder('solo')], 'solo')
+    expect(bare).toEqual([])
   })
 })

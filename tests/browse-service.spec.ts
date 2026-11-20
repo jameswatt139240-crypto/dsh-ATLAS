@@ -18,7 +18,7 @@
  */
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -291,6 +291,213 @@ describe('browse reaches the top of the machine', () => {
       else expect(listing.drives).toEqual([])
     } finally {
       await fiber.dispose()
+    }
+  })
+})
+
+describe('the empty request and a level larger than one page', () => {
+  it('opens an empty request on the folder above the workspace', async () => {
+    // The chooser's first question is "which folder": opening ON the workspace
+    // hides the siblings the user came for.
+    const cwd = await workspace()
+    const ctx = new Context()
+    const fiber = await mount(ctx)
+    try {
+      const runtime = ctx.get('atFile') as AtFileRuntime
+      const listing = await runtime.browse(agentWith(cwd), '', new AbortController().signal)
+      expect(listing.error).toBeUndefined()
+      expect(slashed(listing.path)).toBe(slashed(dirname(cwd)))
+      expect(listing.entries.some(entry => entry.name === 'workspace')).toBe(true)
+    } finally {
+      await fiber.dispose()
+      await rm(dirname(cwd), { recursive: true, force: true })
+    }
+  })
+
+  it('falls back to the workspace itself when nothing above it may be reached', async () => {
+    // read-only: `allowsExternal` refuses every level above the workspace, so the
+    // walk ends on `.` and the request resolves back onto the workspace.
+    const cwd = await workspace()
+    const ctx = new Context()
+    const fiber = await mount(ctx, 'read-only')
+    try {
+      const runtime = ctx.get('atFile') as AtFileRuntime
+      const listing = await runtime.browse(agentWith(cwd), '', new AbortController().signal)
+      expect(listing.error).toBeUndefined()
+      expect(slashed(listing.path)).toBe(slashed(cwd))
+    } finally {
+      await fiber.dispose()
+      await rm(dirname(cwd), { recursive: true, force: true })
+    }
+  })
+
+  it('says the level was cut when a folder holds more than one page', async () => {
+    const cwd = await workspace()
+    for (let index = 0; index < 205; index += 1) {
+      await writeFile(join(cwd, `bulk-${String(index).padStart(3, '0')}.txt`), 'x', 'utf8')
+    }
+    const ctx = new Context()
+    const fiber = await mount(ctx)
+    try {
+      const runtime = ctx.get('atFile') as AtFileRuntime
+      const browsed = await runtime.browse(agentWith(cwd), cwd, new AbortController().signal)
+      expect(browsed.truncated).toBe(true)
+      expect(browsed.entries.length).toBeLessThanOrEqual(200)
+    } finally {
+      await fiber.dispose()
+      await rm(dirname(cwd), { recursive: true, force: true })
+    }
+  })
+})
+
+describe('the folder rows @folder: may offer', () => {
+  it('offers the parent and the siblings, never the workspace itself', async () => {
+    const cwd = await workspace()
+    await mkdir(join(dirname(cwd), 'sibling-project'), { recursive: true })
+    const ctx = new Context()
+    const fiber = await mount(ctx)
+    try {
+      const runtime = ctx.get('atFile') as AtFileRuntime
+      const scope = await runtime.external(agentWith(cwd), new AbortController().signal)
+      expect(scope.canDiscover).toBe(true)
+      expect(scope.folders).toContain(slashed(dirname(cwd)))
+      expect(scope.folders).toContain(slashed(join(dirname(cwd), 'sibling-project')))
+      expect(scope.folders).not.toContain(slashed(cwd))
+    } finally {
+      await fiber.dispose()
+      await rm(dirname(cwd), { recursive: true, force: true })
+    }
+  })
+
+  it('offers only what the ledger knows when the session may not discover', async () => {
+    const cwd = await workspace()
+    const ctx = new Context()
+    const fiber = await mount(ctx, 'read-only')
+    try {
+      const runtime = ctx.get('atFile') as AtFileRuntime
+      const scope = await runtime.external(agentWith(cwd), new AbortController().signal)
+      expect(scope.canDiscover).toBe(false)
+      expect(scope.folders).toEqual(scope.roots)
+    } finally {
+      await fiber.dispose()
+      await rm(dirname(cwd), { recursive: true, force: true })
+    }
+  })
+})
+
+describe('a level larger than one page, asked for by name', () => {
+  it('cuts the listing and says so', async () => {
+    const cwd = await workspace()
+    for (let index = 0; index < 205; index += 1) {
+      await writeFile(join(cwd, `bulk-${String(index).padStart(3, '0')}.txt`), 'x', 'utf8')
+    }
+    const ctx = new Context()
+    const fiber = await mount(ctx)
+    try {
+      const runtime = ctx.get('atFile') as AtFileRuntime
+      const listing = await runtime.list(agentWith(cwd), cwd, '', new AbortController().signal)
+      expect(listing.truncated).toBe(true)
+      expect(listing.entries.length).toBeLessThanOrEqual(200)
+    } finally {
+      await fiber.dispose()
+      await rm(dirname(cwd), { recursive: true, force: true })
+    }
+  })
+})
+
+describe('a session whose workspace has no session header', () => {
+  it('answers with no scope at all instead of guessing one', async () => {
+    const cwd = await workspace()
+    const ctx = new Context()
+    const fiber = await mount(ctx, 'read-only')
+    try {
+      const runtime = ctx.get('atFile') as AtFileRuntime
+      const scope = await runtime.external(agentWith(undefined), new AbortController().signal)
+      expect(scope.canDiscover).toBe(false)
+      expect(scope.folders).toEqual(scope.roots)
+    } finally {
+      await fiber.dispose()
+      await rm(dirname(cwd), { recursive: true, force: true })
+    }
+  })
+})
+
+describe('a workspace spelled as a relative path', () => {
+  it('refuses to open the filesystem root and opens the workspace instead', async () => {
+    // `browseRoot` only answers `/` for an absolute workspace; a relative one has
+    // no reachable root above it, so the empty request stays on `.`.
+    const cwd = await workspace()
+    const ctx = new Context()
+    const fiber = await mount(ctx, 'read-only')
+    try {
+      const runtime = ctx.get('atFile') as AtFileRuntime
+      const parent = dirname(cwd)
+      const relative = `.${cwd.slice(parent.length)}`
+      const listing = await runtime.list(agentWith(relative), '', '', new AbortController().signal)
+      // The relative spelling resolves against the process, not the workspace, so
+      // a narrow session refuses it — the point here is that it never became `/`.
+      expect(listing.error).toBe('outside')
+      expect(slashed(listing.path)).not.toBe('/')
+    } finally {
+      await fiber.dispose()
+      await rm(dirname(cwd), { recursive: true, force: true })
+    }
+  })
+})
+
+describe('a workspace whose parent cannot be read', () => {
+  it('still answers with the ledger roots instead of failing', async () => {
+    const outer = await mkdtemp(join(tmpdir(), 'dsh-atlas-locked-'))
+    const cwd = join(outer, 'ws')
+    await mkdir(cwd)
+    await chmod(outer, 0o000)
+    const ctx = new Context()
+    const fiber = await mount(ctx)
+    try {
+      const runtime = ctx.get('atFile') as AtFileRuntime
+      const scope = await runtime.external(agentWith(cwd), new AbortController().signal)
+      expect(scope.canDiscover).toBe(true)
+      // The sibling scan failed, so the parent is all that is left of the outside rows.
+      expect(scope.folders).toContain(slashed(outer))
+      expect(scope.folders).not.toContain(slashed(cwd))
+    } finally {
+      await chmod(outer, 0o700)
+      await fiber.dispose()
+      await rm(outer, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('a level asked for by name inside the workspace', () => {
+  it('opens that level rather than the browse root', async () => {
+    const cwd = await workspace()
+    await mkdir(join(cwd, 'inner'))
+    const ctx = new Context()
+    const fiber = await mount(ctx)
+    try {
+      const runtime = ctx.get('atFile') as AtFileRuntime
+      const listing = await runtime.list(agentWith(cwd), 'inner', '', new AbortController().signal)
+      expect(slashed(listing.path)).toBe(slashed(join(cwd, 'inner')))
+    } finally {
+      await fiber.dispose()
+      await rm(dirname(cwd), { recursive: true, force: true })
+    }
+  })
+})
+
+describe('a level asked for by name through the browser', () => {
+  it('opens that level instead of the browse root', async () => {
+    const cwd = await workspace()
+    await mkdir(join(cwd, 'inner'))
+    const ctx = new Context()
+    const fiber = await mount(ctx)
+    try {
+      const runtime = ctx.get('atFile') as AtFileRuntime
+      const listing = await runtime.browse(agentWith(cwd), 'inner', new AbortController().signal)
+      expect(slashed(listing.path)).toBe(slashed(join(cwd, 'inner')))
+    } finally {
+      await fiber.dispose()
+      await rm(dirname(cwd), { recursive: true, force: true })
     }
   })
 })

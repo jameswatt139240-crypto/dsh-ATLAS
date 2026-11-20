@@ -8,8 +8,10 @@ import {
   ignoreRuleKey,
   ignoreFilesSettingsKey,
   normalizeIgnoreFiles,
+  normalizeExternalRefs,
   normalizeIgnoreRule,
   normalizeUsage,
+  recordExternalRef,
   normalizeWorkspaceIgnoreFiles,
   normalizeWorkspaceRecentFiles,
   recentFilesFor,
@@ -193,5 +195,90 @@ describe('cross-category usage counters', () => {
     ])
     expect(recordUsage(settings, '  ', 99)).toHaveLength(2)
     expect(recordUsage({} as AtFileSettings, 'file:new', 7)).toEqual([{ key: 'file:new', count: 1, at: 7 }])
+  })
+})
+
+describe('ledger rows that arrive more than once', () => {
+  it('keeps two files as a file, merges the workspace lists, and breaks a tie by path', () => {
+    // A file picked twice is still a file; only a directory can become a root.
+    expect(normalizeExternalRefs([
+      { path: 'E:/a.txt', kind: 'file', count: 1, lastUsedAt: 5 },
+      { path: 'E:/a.txt', kind: 'file', count: 2, lastUsedAt: 5 },
+      { path: 'E:/a.txt', kind: 'dir', count: 1, lastUsedAt: 9, workspaces: ['E:/w1'] },
+      { path: 'E:/b.txt', kind: 'file', count: 1, lastUsedAt: 9 },
+    ])).toEqual([
+      { path: 'E:/a.txt', kind: 'dir', count: 4, lastUsedAt: 9, workspaces: ['E:/w1'] },
+      { path: 'E:/b.txt', kind: 'file', count: 1, lastUsedAt: 9 },
+    ])
+  })
+
+  it('merges two rows that each carry their own workspaces', () => {
+    const merged = normalizeExternalRefs([
+      { path: 'E:/shared', kind: 'dir', count: 1, lastUsedAt: 5, workspaces: ['E:/one'] },
+      { path: 'E:/shared', kind: 'dir', count: 1, lastUsedAt: 6, workspaces: ['E:/two'] },
+    ])
+    expect(merged[0]?.workspaces).toEqual(['E:/one', 'E:/two'])
+  })
+
+  it('keeps the workspaces from the row that carries them, either way round', () => {
+    const first = normalizeExternalRefs([
+      { path: 'E:/half', kind: 'file', count: 1, lastUsedAt: 2, workspaces: ['E:/only'] },
+      { path: 'E:/half', kind: 'file', count: 1, lastUsedAt: 1 },
+    ])
+    expect(first[0]?.workspaces).toEqual(['E:/only'])
+  })
+
+  it('keeps the workspaces that only one of two rows carries', () => {
+    const merged = normalizeExternalRefs([
+      { path: 'E:/half', kind: 'file', count: 1, lastUsedAt: 1 },
+      { path: 'E:/half', kind: 'file', count: 1, lastUsedAt: 2, workspaces: ['E:/only'] },
+    ])
+    expect(merged[0]?.workspaces).toEqual(['E:/only'])
+  })
+
+  it('records a folder the ledger has never seen, and one it has', () => {
+    const fresh = recordExternalRef({} as AtFileSettings, 'E:/new', 'dir', 'E:/w', 10)
+    expect(fresh).toEqual([{ path: 'E:/new', kind: 'dir', count: 1, lastUsedAt: 10, workspaces: ['E:/w'] }])
+    // Same folder again as a FILE: a directory row still wins, the count grows, and
+    // the previous workspace stays alongside the new one.
+    const again = recordExternalRef(
+      { externalRefs: [{ path: 'E:/new', kind: 'dir', count: 1, lastUsedAt: 10, workspaces: ['E:/old'] }] } as unknown as AtFileSettings,
+      'E:/new', 'file', 'E:/w', 20,
+    )
+    expect(again[0]).toMatchObject({ kind: 'dir', count: 2, lastUsedAt: 20, workspaces: ['E:/w', 'E:/old'] })
+    // The reverse order: the incoming pick is the directory, the old row a file.
+    const upgraded = recordExternalRef(
+      { externalRefs: [{ path: 'E:/new', kind: 'file', count: 1, lastUsedAt: 10 }] } as unknown as AtFileSettings,
+      'E:/new', 'dir', 'E:/w', 20,
+    )
+    expect(upgraded[0]).toMatchObject({ kind: 'dir', count: 2 })
+  })
+
+  it('ignores a pick with no path at all', () => {
+    const rows = recordExternalRef({ externalRefs: [{ path: 'E:/kept', kind: 'dir', count: 1, lastUsedAt: 1 }] } as unknown as AtFileSettings, '   ', 'file', 'E:/w', 9)
+    expect(rows.map(row => row.path)).toEqual(['E:/kept'])
+  })
+
+  it('records a pick with no workspace, so the row carries no list', () => {
+    const rows = recordExternalRef({} as AtFileSettings, 'E:/solo', 'file', '', 3)
+    expect(rows[0]?.workspaces).toBeUndefined()
+  })
+})
+
+describe('a usage row that arrives with a higher count later', () => {
+  it('ignores a blank key and a later row that is not larger', () => {
+    expect(normalizeUsage([
+      { key: '   ', count: 9, at: 1 },
+      { key: 'file:a', count: 4, at: 11 },
+      { key: 'file:a', count: 4, at: 12 },
+      { key: 'file:a', count: 2, at: 13 },
+    ] as never)).toEqual([{ key: 'file:a', count: 4, at: 11 }])
+  })
+
+  it('keeps the later, larger count', () => {
+    expect(normalizeUsage([
+      { key: 'file:a', count: 1, at: 10 },
+      { key: 'file:a', count: 4, at: 11 },
+    ] as never)).toEqual([{ key: 'file:a', count: 4, at: 11 }])
   })
 })

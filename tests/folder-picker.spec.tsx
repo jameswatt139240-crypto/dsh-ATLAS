@@ -1189,7 +1189,7 @@ describe('the gestures that write something', () => {
   })
 
   it('does not move the cursor on a level with nothing focusable', async () => {
-    const harness = mount({ browse: () => Promise.resolve(levelOf('E:/Empty')) })
+    const harness = mount({ browse: () => Promise.resolve(levelOf('/home/ubuntu')) })
     await settle()
     // No folder rows: the arrows have nothing to reach, and the dialog does not throw.
     flushed(() => { press(harness.container, 'ArrowDown', {}, 'list') })
@@ -1227,5 +1227,286 @@ describe('the gestures that write something', () => {
     press(harness.container, 'Enter', {}, 'path')
     await settle()
     expect(harness.confirm).not.toHaveBeenCalled()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The answers that arrive late, and the ones that never come at all
+// ---------------------------------------------------------------------------
+
+/** One promise whose resolution this test controls. */
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void; reject: (error: unknown) => void } {
+  let resolve!: (value: T) => void
+  let reject!: (error: unknown) => void
+  const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej })
+  return { promise, resolve, reject }
+}
+
+describe('dsh-atlas folder picker: late and refused answers', () => {
+  it('drops a level that arrives after the dialog is gone', async () => {
+    const browse = deferred<PickerListing>()
+    const harness = mount({ browse: () => browse.promise })
+    harness.unmount()
+    browse.resolve(levelOf('E:/'))
+    await settle()
+    expect(onScreen(document.body)).toBe(false)
+  })
+
+  it('drops the recent list that arrives after the dialog is gone', async () => {
+    const recent = deferred<readonly PickerPreset[]>()
+    const harness = mount({ recent: () => recent.promise })
+    harness.unmount()
+    recent.resolve([preset('Work', 'D:/Work')])
+    await settle()
+    expect(onScreen(document.body)).toBe(false)
+  })
+
+  it('takes an unreadable recent ledger as "no presets" instead of an error', async () => {
+    const harness = mount({ recent: () => Promise.reject(new Error('ledger is gone')) })
+    await settle()
+    expect(onScreen(harness.container)).toBe(true)
+    click(rowNamed(harness.container, t('picker.group.presets')))
+    // The group is present but says it has none; the dialog still works.
+    expect(rowNames(harness.container)).toContain(t('picker.group.presets'))
+    expect(notes(harness.container)).toContain(t('picker.group.none'))
+  })
+
+  it('shows a refused level as text, even when the refusal is not an Error', async () => {
+    const harness = mount({ browse: () => Promise.reject('EACCES') })
+    await settle()
+    expect(notes(harness.container)).toContain('EACCES')
+  })
+
+  it('drops a child listing that arrives after the dialog is gone', async () => {
+    const list = deferred<PickerListing>()
+    const harness = mount({ list: () => list.promise })
+    await settle()
+    press(harness.container, 'Enter') // expand Rust
+    list.resolve(levelOf('E:/Rust'))
+    harness.unmount()
+    await settle()
+    expect(onScreen(document.body)).toBe(false)
+  })
+
+  it('reports a refused child listing instead of expanding an empty folder', async () => {
+    const harness = mount({ list: () => Promise.reject('blocked') })
+    await settle()
+    click(rowNamed(harness.container, 'Rust'))
+    await settle()
+    expect(notes(harness.container)).toContain('blocked')
+  })
+})
+
+describe('dsh-atlas folder picker: the group that starts open', () => {
+  it('closes and reopens the current folder group from its own header', async () => {
+    const harness = mount()
+    await settle()
+    const group = rowNamed(harness.container, t('picker.group.current'))
+    expect(group.getAttribute('aria-expanded')).toBe('true')
+    click(group)
+    expect(expandedOf(harness.container, t('picker.group.current'))).toBe('false')
+    // The rows it held are gone, and the header is still there to reopen it.
+    expect(rowNames(harness.container)).not.toContain('Rust')
+    click(rowNamed(harness.container, t('picker.group.current')))
+    expect(expandedOf(harness.container, t('picker.group.current'))).toBe('true')
+  })
+
+  it('says the folder is empty when it holds nothing and nothing is being filtered', async () => {
+    const bare: PickerListing = { path: 'E:/Solo', home: '', crumbs: [], truncated: false, entries: [] }
+    const harness = mount({ browse: () => Promise.resolve(bare) })
+    await settle()
+    // ignore the group headers' own notes; the level's is the one under the current group
+    expect(notes(harness.container).join('|')).toContain(t('picker.empty'))
+  })
+
+  it('spells a root crumb whose name is empty as its path', async () => {
+    const root = { ...levelOf('E:/'), crumbs: [entry('', '/')] }
+    const harness = mount({ browse: () => Promise.resolve(root) })
+    await settle()
+    expect(crumbNames(harness.container)).toContain('/')
+  })
+
+  it('closes only when the scrim itself is pressed', async () => {
+    const harness = mount()
+    await settle()
+    const scrim = dialog(harness.container).parentElement as HTMLElement
+    flushed(() => { dialog(harness.container).dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true })) })
+    expect(harness.close).not.toHaveBeenCalled()
+    flushed(() => { scrim.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true })) })
+    expect(harness.close).toHaveBeenCalled()
+  })
+
+  it('walks to the last row from the path line', async () => {
+    const harness = mount()
+    await settle()
+    press(harness.container, 'ArrowUp', {}, 'path')
+    const focusable = rows(harness.container).filter(row => row.getAttribute('aria-selected') !== null)
+    expect(currentName(harness.container)).toBe(nameOf(focusable[focusable.length - 1]!))
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The reflexes that only fire on a second gesture, or on an abort
+// ---------------------------------------------------------------------------
+
+describe('dsh-atlas folder picker: the second gesture and the aborted one', () => {
+  it('asks for a folder\u2019s children only once when two clicks land in one batch', async () => {
+    const list = deferred<PickerListing>()
+    const harness = mount({ list: () => list.promise })
+    await settle()
+    // Two clicks in the same batch: the second one still sees the pre-batch
+    // `expanded`/`loading` values, which is exactly where the guards live.
+    flushed(() => {
+      const row = rowNamed(harness.container, 'Rust')
+      const fire = (): void => { row.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })) }
+      fire()
+      fire()
+    })
+    await settle()
+    expect(harness.list).toHaveBeenCalledTimes(1)
+  })
+
+  it('drops a child listing answer that arrives after the dialog is gone', async () => {
+    const list = deferred<PickerListing>()
+    const harness = mount({ list: () => list.promise })
+    await settle()
+    click(rowNamed(harness.container, 'Rust'))
+    await settle()
+    harness.unmount()
+    list.resolve(levelOf('E:/Rust'))
+    await settle()
+    expect(onScreen(document.body)).toBe(false)
+  })
+
+  it('expands a probed folder once even when two probes overlap', async () => {
+    const answers: Array<(value: PickerListing) => void> = []
+    const harness = mount({ list: () => new Promise<PickerListing>((resolve) => { answers.push(resolve) }) })
+    await settle()
+    flushed(() => {
+      const row = rowNamed(harness.container, 'Probe')
+      const fire = (): void => { row.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })) }
+      fire()
+      fire()
+    })
+    await settle()
+    expect(answers).toHaveLength(2)
+    answers[0]!(levelOf('E:/Probe'))
+    await settle()
+    answers[1]!(levelOf('E:/Probe'))
+    await settle()
+    // One expansion, one set of children.
+    expect(rowNames(harness.container).filter(name => name === 'Inside')).toHaveLength(1)
+  })
+
+  it('reports a probe that was refused', async () => {
+    const harness = mount({ list: () => Promise.reject('probe blocked') })
+    await settle()
+    click(rowNamed(harness.container, 'Probe'))
+    await settle()
+    expect(notes(harness.container).join('|')).toContain('probe blocked')
+  })
+
+  it('reports a probe refused with an Error by its message', async () => {
+    const harness = mount({ list: () => Promise.reject(new Error('probe failed')) })
+    await settle()
+    click(rowNamed(harness.container, 'Probe'))
+    await settle()
+    expect(notes(harness.container).join('|')).toContain('probe failed')
+  })
+
+  it('keeps the cursor off a row the filter took away', async () => {
+    stubGeometry()
+    const harness = mount()
+    await settle()
+    hover(rowNamed(harness.container, 'Rust'))
+    flushed(() => { listBox(harness.container).focus() })
+    press(harness.container, 'z') // filters every folder out
+    await settle()
+    expect(onScreen(harness.container)).toBe(true)
+  })
+
+  it('does not adopt anything when Ctrl+Enter lands before a level exists', async () => {
+    const browse = deferred<PickerListing>()
+    const harness = mount({ browse: () => browse.promise })
+    flushed(() => {
+      dialog(harness.container).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true, cancelable: true }))
+    })
+    await settle()
+    expect(harness.confirm).not.toHaveBeenCalled()
+    browse.resolve(levelOf('E:/'))
+    await settle()
+  })
+
+  it('leaves an unrelated key alone in the path line', async () => {
+    const harness = mount()
+    await settle()
+    press(harness.container, 'ArrowLeft', {}, 'path')
+    press(harness.container, 'F1')
+    expect(onScreen(harness.container)).toBe(true)
+  })
+
+  it('shows the home crumb when the Host offers one', async () => {
+    const harness = mount({ browse: () => Promise.resolve({ ...levelOf('E:/'), home: '/home/dev', drives: undefined }) })
+    await settle()
+    expect(crumbNames(harness.container)).toContain(t('picker.home'))
+  })
+
+  it('reports a failed new folder, even when the failure is not an Error', async () => {
+    const harness = mount({ create: () => Promise.reject('mkdir denied') })
+    await settle()
+    click(buttonWith(harness.container, t('picker.newFolder')))
+    const form = dialog(harness.container).querySelector('form') as HTMLFormElement
+    typeInto(form.querySelector('input') as HTMLInputElement, 'New')
+    flushed(() => { form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })) })
+    await settle()
+    expect(notes(harness.container).join('|')).toContain('mkdir denied')
+  })
+})
+
+describe('dsh-atlas folder picker: an answer that lands after the dialog closed', () => {
+  it('ignores a refused recent ledger once the dialog is gone', async () => {
+    const recent = deferred<readonly PickerPreset[]>()
+    const harness = mount({ recent: () => recent.promise })
+    await settle()
+    harness.unmount()
+    recent.reject('ledger gone')
+    await settle()
+    expect(onScreen(document.body)).toBe(false)
+  })
+
+  it('ignores a refused child listing once the dialog is gone', async () => {
+    const list = deferred<PickerListing>()
+    const harness = mount({ list: () => list.promise })
+    await settle()
+    click(rowNamed(harness.container, 'Rust'))
+    await settle()
+    harness.unmount()
+    list.reject('blocked')
+    await settle()
+    expect(onScreen(document.body)).toBe(false)
+  })
+
+  it('ignores a probe answer that lands once the dialog is gone', async () => {
+    const list = deferred<PickerListing>()
+    const harness = mount({ list: () => list.promise })
+    await settle()
+    click(rowNamed(harness.container, 'Probe'))
+    await settle()
+    harness.unmount()
+    list.resolve(levelOf('E:/Probe'))
+    await settle()
+    expect(onScreen(document.body)).toBe(false)
+  })
+
+  it('ignores a refused probe once the dialog is gone', async () => {
+    const list = deferred<PickerListing>()
+    const harness = mount({ list: () => list.promise })
+    await settle()
+    click(rowNamed(harness.container, 'Probe'))
+    await settle()
+    harness.unmount()
+    list.reject('blocked')
+    await settle()
+    expect(onScreen(document.body)).toBe(false)
   })
 })

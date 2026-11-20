@@ -244,7 +244,8 @@ export function crumbsOf(path: string): readonly PickerEntry[] {
   // genuine ancestor, and the prefix is rebuilt from the raw parts so a POSIX
   // ancestor keeps the leading slash `parts[0]` holds — `/home`, never `home`.
   for (let index = 1; index < parts.length; index += 1) {
-    const segment = parts[index] ?? ''
+    // `index` is bounded by the array's own length, so the entry exists.
+    const segment = parts[index] as string
     if (segment === '') continue
     crumbs.push({ name: segment, path: parts.slice(0, index + 1).join('/'), hidden: false })
   }
@@ -712,10 +713,11 @@ export function apply(ctx: ClientContext): void {
 
   // Recently referenced files: durable per-workspace history (most recent
   // first), recorded on file picks and read back for the @file: initial view.
-  const onRecent = (sessionId: SessionId, relative: string): void => {
-    const entry = entryByRel.get(relative)
-    if (entry === undefined) return
-    const workspace = workspaceFromAbsolute(entry.path, relative)
+  const onRecent = (_sessionId: SessionId, absolute: string, relative: string): void => {
+    // The picker already holds the settled entry, so the absolute path arrives with
+    // the pick: a history write must not depend on a map that a reconnect can clear
+    // between the index answer and the user's click.
+    const workspace = workspaceFromAbsolute(absolute, relative)
     const current = scope.getSnapshot().value
     void updateSettings({ field: 'recentFiles', value: recordRecentFile(current, workspace, relative) })
   }
@@ -1254,11 +1256,12 @@ export function apply(ctx: ClientContext): void {
       sidebar.openResource(folderAddress(resolveOwningDir(link.path, dir)), { params: { select } })
       return 'opened'
     } catch (error) {
-      // The address may be one this build's tab type does not claim. Opening the
-      // reference itself is what the FIRST click does, and a click that still
-      // opens something beats a click that does nothing.
+      // The address may be one this build's tab type does not claim. The fallback
+      // is the file manager, NOT the first click's target: `openReferenceTarget`
+      // routes a folder with a Sidebar mounted straight back here, so falling back
+      // to it would recurse until the tab stops throwing.
       console.error('[dsh-atlas] sidebar folder open failed:', error)
-      return openReferenceTarget(sessionId, link)
+      return openNativeFolder(sessionId, link.path)
     }
   }
 

@@ -740,3 +740,31 @@ describe('ReferenceLinks bridge', () => {
     unmountBridge(root)
   })
 })
+
+describe('composer chips the pointer and the observer find', () => {
+  it('marks a composer chip whose host element arrives on its own', async () => {
+    const { root } = mountBridge('<div></div>')
+    const host = document.createElement('span')
+    host.setAttribute('data-composer-chip', 'sidebar')
+    host.innerHTML = '<span title="AGENTS.md"></span>'
+    document.body.append(host)
+    // The observer only watches ADDED subtrees: the host element itself is the
+    // added node, so the mark sweep starts at it.
+    await new Promise(resolve => { setTimeout(resolve, 0) })
+    expect(host.firstElementChild?.getAttribute(LINK_ATTRIBUTE)).toBe('')
+    host.remove()
+    unmountBridge(root)
+  })
+
+  it('marks a composer chip the pointer lands on directly', () => {
+    const { root } = mountBridge('<div></div>')
+    const host = document.createElement('span')
+    host.setAttribute('data-composer-chip', 'sidebar')
+    host.innerHTML = '<span title="CHANGELOG.md"></span>'
+    document.body.append(host)
+    host.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+    expect(host.firstElementChild?.getAttribute(LINK_ATTRIBUTE)).toBe('')
+    host.remove()
+    unmountBridge(root)
+  })
+})

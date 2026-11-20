@@ -189,3 +189,63 @@ describe('the side ad panel', () => {
     root.unmount()
   })
 })
+
+describe('the side ad panel: the edges it declines, and the images it waits for', () => {
+  it('hides a results-panel ad when there is no room on the left either', () => {
+    const menu = store(state({
+      hit: { trigger: '@', query: 'a', position: 'leading', span: { start: 0, end: 2, draftRev: 1 } },
+      groups: [{ source: 'atlas', status: 'ready', items: [{ name: 'a.ts', value: 'a.ts' }] }] as never,
+    }))
+    const host = document.createElement('div')
+    document.body.append(host)
+    const root = createRoot(host)
+    // The menu starts at the viewport's left edge: the ad cannot sit out-LEFT.
+    menuElement(rect(4, 500, 0, 200))
+    flushSync(() => { root.render(<MentionAd menu={menu as never} />) })
+    expect(panel().style.display).toBe('none')
+    root.unmount()
+  })
+
+  it('does nothing on a tick while the menu is closed', () => {
+    vi.useFakeTimers()
+    try {
+      const menu = store(state({ open: false }))
+      const host = document.createElement('div')
+      document.body.append(host)
+      const root = createRoot(host)
+      const menuEl = menuElement(rect(100, 300, 50, 200))
+      flushSync(() => { root.render(<MentionAd menu={menu as never} />) })
+      expect(panel().style.display).toBe('none')
+      const before = menuEl.getBoundingClientRect
+      menuEl.getBoundingClientRect = () => { throw new Error('must not be measured while closed') }
+      vi.advanceTimersByTime(500)
+      expect(panel().style.display).toBe('none')
+      menuEl.getBoundingClientRect = before
+      root.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('ignores an image load that reports no natural size, and takes one that does', () => {
+    const menu = store(state())
+    const host = document.createElement('div')
+    document.body.append(host)
+    const root = createRoot(host)
+    menuElement(rect(100, 400, 0, 200))
+    flushSync(() => { root.render(<MentionAd menu={menu as never} />) })
+    const images = [...panel().querySelectorAll('img')]
+    const [pending, ready] = images as [HTMLImageElement, HTMLImageElement]
+    // jsdom reports no natural size until a test pins one: the handler must not
+    // divide by it.
+    flushSync(() => { pending.dispatchEvent(new Event('load')) })
+    expect(panel().style.display).toBe('block')
+    Object.defineProperty(ready, 'naturalWidth', { value: 300, configurable: true })
+    Object.defineProperty(ready, 'naturalHeight', { value: 600, configurable: true })
+    flushSync(() => { ready.dispatchEvent(new Event('load')) })
+    expect(panel().style.display).toBe('block')
+    // The panel kept its geometry: a load only re-measures.
+    expect(panel().style.height).toBe('200px')
+    root.unmount()
+  })
+})

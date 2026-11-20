@@ -425,9 +425,10 @@ export function normalizeUsage(values: UsageRows): UsageRow[] {
     const key = entry.key.trim()
     if (key === '' || entry.count < 1) continue
     const current = byKey.get(key)
-    if (current === undefined || entry.count > current.count) {
-      byKey.set(key, { key, count: entry.count, at: entry.at })
-    }
+    // A later row only wins on a STRICTLY higher count; an equal or smaller one
+    // keeps what the first row established.
+    if (current !== undefined && entry.count <= current.count) continue
+    byKey.set(key, { key, count: entry.count, at: entry.at })
   }
   return [...byKey.values()]
     .sort((a, b) => b.count - a.count || b.at - a.at)

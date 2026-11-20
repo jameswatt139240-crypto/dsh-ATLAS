@@ -1851,7 +1851,7 @@ describe('recent files', () => {
       via: 'menu',
       span: { start: 0, end: 1, draftRev: 1 },
     })
-    expect(onRecent).toHaveBeenCalledWith(session('s1').sessionId, 'src/client/view.ts')
+    expect(onRecent).toHaveBeenCalledWith(session('s1').sessionId, '/ws/src/client/view.ts', 'src/client/view.ts')
   })
 
   it('derives the workspace from an absolute path and its relative', () => {

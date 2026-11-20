@@ -311,6 +311,9 @@ export function FrameCursor(props: FrameCursorProps) {
 
   // Same reasoning as `inputActionsRef`: the deferred reuse (A-13) settles inside an
   // effect, and calling `reuse` directly there would put it in that effect's deps.
+  // The initializer is never called: render assigns `current` before any effect
+  // can read it, and the deferred reuse below only reads.
+  /* v8 ignore next -- the render-time assignment below replaces the initializer */
   const reuseRef = useRef<(frame: HistoryFrame) => void>(() => {})
 
   // Everything the document listener reads lives in refs: the listener is
@@ -641,8 +644,11 @@ export function FrameCursor(props: FrameCursorProps) {
     const previous = chordResetRef.current
     chordResetRef.current = { quickSlot, turnRunning: sessionRunning, newestQuickTurn }
     // A new frame while the chord sat off the draft: the user's own next message.
-    if (previous.quickSlot !== 0 && !(previous.turnRunning && sessionRunning)) {
-      setQuickSlot(0)
+    if (previous.quickSlot !== 0) {
+      // A message that arrives while a turn is still running is not the user's
+      // next message: it is that turn's own output, so the chord stays put.
+      const stillRunning = previous.turnRunning && sessionRunning
+      if (!stillRunning) setQuickSlot(0)
     }
   } else if (chordResetRef.current.quickSlot !== quickSlot || chordResetRef.current.turnRunning !== sessionRunning) {
     chordResetRef.current = { quickSlot, turnRunning: sessionRunning, newestQuickTurn }
@@ -898,6 +904,10 @@ export function FrameCursor(props: FrameCursorProps) {
             // So a chord press at its older edge now names the end of the walk in both
             // phases, which is exactly the A-16 contract ("never a silent no-op") that
             // A-21 would otherwise have quietly reintroduced once the wrap was gone.
+            // A chord press cannot reach this branch: the quick chords are
+            // resolved above the phase split (see `resolveIntent`) and reusing a
+            // frame never walks, so `atEdge` here is always the plain-arrow case.
+            /* v8 ignore next -- the quick chords are answered before the walk */
             if (intent.quick && atEdge) setEdgeReached(true)
             event.preventDefault()
             return
@@ -1373,7 +1383,13 @@ function useHistoryFrames(
   )
 }
 
-/** A subscription that never fires; see `useHistoryFrames`. */
+/**
+ * A subscription that never fires; see `useHistoryFrames`.
+ *
+ * Returned, never invoked: React only calls the unsubscribe a subscription hands
+ * back, so this function body is reached only through that unused callback.
+ */
+/* v8 ignore next -- returned as an unsubscribe, never called */
 function noop(): () => void {
   return () => {}
 }

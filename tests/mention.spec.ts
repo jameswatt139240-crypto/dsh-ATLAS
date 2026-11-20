@@ -462,3 +462,30 @@ describe('mentionPreStep', () => {
     }
   })
 })
+
+describe('the same objects come back when nothing is injected', () => {
+  const agent = { session: { header: { cwd: '/ws' } } }
+
+  it('returns the downstream decision itself when the feature is off', async () => {
+    // With the pasted-@ policy off the message array is passed through untouched,
+    // so a disabled plugin must hand back the very decision it received: the
+    // framework compares identities and a re-wrapped no-op would look like work.
+    const messages = [user('keep @as-is')]
+    const downstream = { kind: 'enter', messages } as const
+    const decision = await mentionPreStep(
+      agent, () => false, messages, new AbortController().signal,
+      async () => downstream, () => false,
+    )
+    expect(decision).toBe(downstream)
+  })
+
+  it('returns the downstream decision itself when there was nothing to inject', async () => {
+    const messages = [user('plain words with no mention')]
+    const downstream = { kind: 'enter', messages } as const
+    const decision = await mentionPreStep(
+      agent, () => true, messages, new AbortController().signal,
+      async () => downstream, () => false,
+    )
+    expect(decision).toBe(downstream)
+  })
+})

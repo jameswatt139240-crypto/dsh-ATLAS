@@ -212,3 +212,16 @@ describe('AtlasProvider contract shape', () => {
     expect(body).toBe('the body')
   })
 })
+
+describe('AtlasRegistry disposal is idempotent', () => {
+  it('ignores a second call to the same disposer', () => {
+    // React may run an effect's cleanup twice (StrictMode remount). The second
+    // call must find nothing to remove instead of splicing a neighbour out.
+    const registry = new AtlasRegistry()
+    const dispose = registry.register(provider({ id: 'gh', display: 'GitHub' }))
+    registry.register(provider({ id: 'db', display: 'Database' }))
+    dispose()
+    dispose()
+    expect(registry.entries().map(entry => entry.id)).toEqual(['db'])
+  })
+})

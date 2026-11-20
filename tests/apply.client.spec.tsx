@@ -1947,3 +1947,484 @@ describe('dsh-atlas overlay faces and one-level crumbs', () => {
     expect(getSettings.mock.calls.length).toBeGreaterThan(before)
   })
 })
+
+describe('dsh-atlas built-in git provider over the Atlas namespace', () => {
+  const runtime = async () => ({ ok: true as const, value: { version: '0.1.5', tested: [] } as never })
+
+  it('keeps the menu alive when the change list is refused, and says why', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const booted = await boot({
+      remoteAtlas: {
+        runtime,
+        gitChanges: async () => ({ ok: false as const, error: { code: 'EACCES', message: 'no repository' } }),
+      },
+    })
+    const rows = await registered(booted).candidates(s1, { query: 'git:', position: 'leading', signal: signal() })
+    // A refusal is not a crash: the menu still answers (with its own rows), and the
+    // failure is reported once by the provider layer.
+    expect(rows.length).toBeGreaterThan(0)
+    expect(logged).toHaveBeenCalled()
+    logged.mockRestore()
+  })
+
+  it('opens the file a committed change names through the plugin file action', async () => {
+    const booted = await boot({
+      remoteAtlas: {
+        runtime,
+        gitChanges: async () => ({ ok: true as const, value: [{ path: 'src/a.ts', status: 'M', added: 1, removed: 0 }] }),
+      },
+      atFileSearch: async () => ({ ok: true as const, value: [{ path: '/ws/src/a.ts', relative: 'src/a.ts', kind: 'file' }] }),
+    })
+    const source = registered(booted)
+    await source.candidates(s1, { query: '', position: 'leading', signal: signal() })
+    await settle()
+    const rows = await source.candidates(s1, { query: 'git:a', position: 'leading', signal: signal() })
+    const row = rows.find(candidate => candidate.mentionKind === 'provider')
+    expect(row).toBeDefined()
+    // The provider's own `open` is what decides what a committed change means; this
+    // one routes it to the same file action the menu runs, so a pick never crashes.
+    expect(() => source.onPick?.({ candidate: row!, session: s1, action: 'pick' } as never)).not.toThrow()
+    await settle()
+  })
+})
+
+describe('dsh-atlas listing facts the chooser keeps verbatim', () => {
+  it('passes requested, drives, parent and the refusal reason straight through', async () => {
+    const booted = await boot({
+      atFileBrowse: async () => ({
+        ok: true as const,
+        value: {
+          path: 'E:/',
+          entries: [],
+          truncated: true,
+          requested: 'E:/x',
+          drives: ['C:/', 'E:/'],
+          parent: 'E:/',
+          error: { code: 'ENOENT', message: 'gone' },
+        } as never,
+      }),
+    })
+    const rows = await pickerOf(booted).inject('s1').browse('E:/', signal())
+    expect(rows).toMatchObject({ path: 'E:/', truncated: true, requested: 'E:/x', drives: ['C:/', 'E:/'], parent: 'E:/', error: { code: 'ENOENT', message: 'gone' } })
+  })
+
+  it('lists and browses the browse root when the dialog names no path at all', async () => {
+    const list = vi.fn(async (_id: SessionId, path: string) => ({ ok: true as const, value: listing(path, ['one']) }))
+    const booted = await boot({ atFileList: list })
+    const picker = pickerOf(booted).inject('s1')
+    const listed = await picker.list(undefined as never, signal())
+    expect(list).toHaveBeenCalledWith('s1', '', '', expect.anything())
+    expect(listed.path).toBe('')
+    const browsed = await picker.browse(undefined as never, signal())
+    expect(browsed.entries.map(row => row.name)).toEqual(['one'])
+  })
+})
+
+describe('dsh-atlas folder tab file action', () => {
+  it('opens the file a folder row names through the same action the menu runs', async () => {
+    const booted = await boot({
+      sidebarTabs: { register: () => () => {} },
+      atFileSearch: async () => ({ ok: true as const, value: [{ path: '/home/x/one.txt', relative: 'one.txt', kind: 'file' }] }),
+    })
+    await registered(booted).candidates(s1, { query: '', position: 'leading', signal: signal() })
+    await settle()
+    const tab = booted.slotsRegister.mock.calls
+      .find(call => call[0]?.name === 'sidebar.right.pane.tab')?.[0] as { inject: (sessionId: string) => { openFile: (path: string) => void } }
+    tab.inject('s1').openFile('one.txt')
+    await settle()
+    expect(booted.openPath).toHaveBeenCalledWith({ path: '/home/x/one.txt' })
+  })
+})
+
+describe('dsh-atlas owning folders without an index or a sidebar', () => {
+  it('reveals a folder at the browse root when nothing has been indexed yet', async () => {
+    const booted = await boot()
+    const openResource = vi.fn()
+    booted.ctx.provide('sidebarRight', { openResource })
+    dockOf(booted).inject('s1').onOpen({ kind: 'folder', path: 'src' })
+    await settle()
+    expect(openResource).toHaveBeenCalledTimes(1)
+  })
+
+  it('hands a folder to the Host opener when this build has no right Sidebar', async () => {
+    const booted = await boot({ sessionList: { ids: ['s1'], byId: { s1: { displayTitle: 'one', cwd: '/ws' } } } })
+    dockOf(booted).inject('s1').onOpen({ kind: 'folder', path: 'src' })
+    await settle()
+    expect(booted.openPath).toHaveBeenCalledWith({ path: '/ws/src' })
+  })
+
+  it('resolves a relative owning directory through the index entry', async () => {
+    const booted = await boot({
+      atFileSearch: async () => ({
+        ok: true as const,
+        value: [
+          { path: '/ws/src', relative: 'src', kind: 'dir' },
+          { path: '/ws/src/deep', relative: 'src/deep', kind: 'dir' },
+          { path: '/ws/README.md', relative: 'README.md', kind: 'file' },
+        ],
+      }),
+    })
+    const source = registered(booted)
+    await source.candidates(s1, { query: '', position: 'leading', signal: signal() })
+    await settle()
+    const openResource = vi.fn()
+    booted.ctx.provide('sidebarRight', { openResource })
+    // First click reveals the folder; the second click on the same folder walks up.
+    dockOf(booted).inject('s1').onOpen({ kind: 'folder', path: 'src/deep' })
+    await settle()
+    expect(openResource.mock.calls[0]![0]).toBe('dsh-resource://folder//ws/src')
+    // A top-of-workspace object has no directory part: its owning folder is its own
+    // parent, which only the index entry can spell.
+    dockOf(booted).inject('s1').onOpen({ kind: 'file', path: 'README.md' })
+    await settle()
+    dockOf(booted).inject('s1').onOpen({ kind: 'file', path: 'README.md' })
+    await settle()
+    expect(openResource.mock.calls.at(-1)![0]).toBe('dsh-resource://folder//ws')
+  })
+})
+
+describe('dsh-atlas ledger entries a reference can never own', () => {
+  it('never records a skill or a provider item as a repeat click', async () => {
+    const booted = await boot()
+    const bridge = referenceBridge(booted).inject('s1')
+    expect(bridge.actionFor({ kind: 'skill', name: 'demo' })).toBeDefined()
+    // A second click on a skill is still a first click: it owns no folder.
+    expect(bridge.actionFor({ kind: 'skill', name: 'demo' })).toBeDefined()
+  })
+
+  it('leaves a provider item with no open declared inert', async () => {
+    const booted = await boot()
+    const provider = { id: 'demo', display: 'Demo', scopes: [], testedOn: [], list: async () => ([{ id: 'x', title: 'x' }]) }
+    ;(booted.ctx as unknown as { atlas: { register: (p: unknown) => void } }).atlas.register(provider)
+    const dock = dockOf(booted).inject('s1')
+    expect(() => dock.onOpen({ kind: 'atlas', provider: 'demo', item: 'x' })).not.toThrow()
+  })
+})
+
+describe('dsh-atlas menu faces for a session the client does not know', () => {
+  it('refuses the menu-icon face by name', async () => {
+    const booted = await boot({ withoutSessionScope: true })
+    const face = booted.slotsRegister.mock.calls
+      .find(call => (call[0] as { id?: string })?.id === 'atlas-menu-icons')?.[0] as { inject: (sessionId: string) => unknown }
+    expect(() => face.inject('ghost')).toThrow(/has no client scope/)
+  })
+})
+
+describe('dsh-atlas history face without a session face', () => {
+  const historyFace = (booted: Awaited<ReturnType<typeof boot>>) =>
+    booted.slotsRegister.mock.calls
+      .find(call => (call[0] as { id?: string })?.id === 'atlas-history-jump')?.[0] as {
+        inject: (sessionId: string) => { loadThrough?: (seq: number) => void; projections?: unknown }
+      }
+
+  it('registers the walk without the optional jump loader', async () => {
+    const booted = await boot()
+    const face = historyFace(booted).inject('s1')
+    expect(face.loadThrough).toBeUndefined()
+    expect(face.projections).toBeUndefined()
+  })
+
+  it('binds the jump loader and the projections when the session face has them', async () => {
+    const loadThrough = vi.fn()
+    const projections = { turns: [] }
+    const booted = await boot({ sessionFace: { loadThrough, projections } })
+    const face = historyFace(booted).inject('s1')
+    face.loadThrough?.(7)
+    expect(loadThrough).toHaveBeenCalledWith(7)
+    expect(face.projections).toBe(projections)
+  })
+})
+
+describe('dsh-atlas git provider open through the dock', () => {
+  it('opens a committed change the dock names, through the file action', async () => {
+    const booted = await boot({
+      remoteAtlas: {
+        runtime: async () => ({ ok: true as const, value: {} as never }),
+        gitChanges: async () => ({ ok: true as const, value: [{ path: 'src/a.ts', status: 'M', added: 1, removed: 0 }] }),
+      },
+      atFileSearch: async () => ({ ok: true as const, value: [{ path: '/ws/src/a.ts', relative: 'src/a.ts', kind: 'file' }] }),
+    })
+    const source = registered(booted)
+    await source.candidates(s1, { query: '', position: 'leading', signal: signal() })
+    await settle()
+    dockOf(booted).inject('s1').onOpen({ kind: 'atlas', provider: 'git', item: 'src/a.ts' })
+    await settle()
+    expect(booted.openPath).toHaveBeenCalledWith({ path: '/ws/src/a.ts' })
+  })
+})
+
+describe('dsh-atlas scoping verdicts the Host cannot give', () => {
+  const scoped = (body: string) => { document.body.innerHTML = `<div data-lexical-editor="true"><p><span>${body}</span></p></div>` }
+  const base = {
+    atFileSearch: async () => ({ ok: true as const, value: [{ path: '/ws/a.ts', relative: 'a.ts', kind: 'file' as const }] }),
+    atFileExternal: async () => ({ ok: true as const, value: { canDiscover: true, roots: ['E:/'], folders: [] } }),
+    atFileList: async (_id: SessionId, path: string) => ({ ok: true as const, value: listing(path, ['one.ts']) }),
+  }
+
+  it('answers "not a folder" on a Host with no inspect at all', async () => {
+    const booted = await boot(base)
+    scoped('@e:/outsidedir @file:')
+    await settle()
+    try {
+      const rows = await registered(booted).candidates(s1, { query: 'file:', position: 'leading', signal: signal() })
+      // Without a verdict the unscoped index still answers; the token is not a scope.
+      expect(rows.some(row => row.mentionKind === 'file')).toBe(true)
+    } finally {
+      document.body.innerHTML = ''
+    }
+  })
+
+  it('answers "not a folder" when the inspect refuses', async () => {
+    const booted = await boot({
+      ...base,
+      atFileInspect: (async () => ({ ok: false as const, error: { code: 'EIO', message: 'gone', details: {} } })) as never,
+    })
+    scoped('@e:/outsidedir @file:')
+    await settle()
+    try {
+      const rows = await registered(booted).candidates(s1, { query: 'file:', position: 'leading', signal: signal() })
+      expect(rows.some(row => row.mentionKind === 'file')).toBe(true)
+    } finally {
+      document.body.innerHTML = ''
+    }
+  })
+
+  it('forgets the oldest verdict instead of growing without a bound', async () => {
+    let n = 0
+    const inspect = vi.fn(async (_id: SessionId, targets: readonly string[]) => ({
+      ok: true as const,
+      value: targets.map(relative => ({ relative, exists: true, kind: 'dir' as const })),
+    }))
+    const booted = await boot({ ...base, atFileInspect: inspect as never })
+    const source = registered(booted)
+    try {
+      for (n = 0; n < 51; n += 1) {
+        scoped(`@e:/dir${n} @file:`)
+        await source.candidates(s1, { query: 'file:', position: 'leading', signal: signal() })
+      }
+      // The 51st path evicted the first: asking for dir0 again consults the Host.
+      const before = inspect.mock.calls.length
+      scoped('@e:/dir0 @file:')
+      await source.candidates(s1, { query: 'file:', position: 'leading', signal: signal() })
+      expect(inspect.mock.calls.length).toBe(before + 1)
+    } finally {
+      document.body.innerHTML = ''
+    }
+  })
+})
+
+describe('dsh-atlas ledger writes for references without a folder', () => {
+  it('notes a skill click without inventing a folder identity', async () => {
+    const booted = await boot()
+    const bridge = referenceBridge(booted).inject('s1')
+    expect(() => (bridge as unknown as { noteClick: (link: BridgeLink) => void }).noteClick({ kind: 'skill', name: 'demo' })).not.toThrow()
+  })
+})
+
+describe('dsh-atlas absolute references and a build with no sidebar', () => {
+  it('hands an absolute folder to the Host opener by its absolute path', async () => {
+    const booted = await boot()
+    const dock = dockOf(booted).inject('s1')
+    dock.onOpen({ kind: 'folder', path: '/outside/dir' })
+    await settle()
+    dock.onOpen({ kind: 'folder', path: '/outside/dir' })
+    await settle()
+    expect(booted.openPath).toHaveBeenCalledWith({ path: '/outside/dir' })
+  })
+
+  it('reveals a folder through the Host opener on its second click when no Sidebar exists', async () => {
+    const booted = await boot({
+      sessionList: { ids: ['s1'], byId: { s1: { displayTitle: 'one', cwd: '/ws' } } },
+    })
+    const dock = dockOf(booted).inject('s1')
+    dock.onOpen({ kind: 'folder', path: 'src' })
+    await settle()
+    dock.onOpen({ kind: 'folder', path: 'src' })
+    await settle()
+    expect(booted.openPath).toHaveBeenCalledWith({ path: '/ws/src' })
+  })
+
+  it('falls back to the reference itself when the Sidebar refuses the folder address', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const booted = await boot({
+      atFileSearch: async () => ({ ok: true as const, value: [{ path: '/ws/src/deep', relative: 'src/deep', kind: 'dir' }] }),
+      sessionList: { ids: ['s1'], byId: { s1: { displayTitle: 'one', cwd: '/ws' } } },
+    })
+    await registered(booted).candidates(s1, { query: '', position: 'leading', signal: signal() })
+    await settle()
+    booted.ctx.provide('sidebarRight', { openResource: () => { throw new Error('no tab claims it') } })
+    const dock = dockOf(booted).inject('s1')
+    dock.onOpen({ kind: 'folder', path: 'src/deep' })
+    await settle()
+    dock.onOpen({ kind: 'folder', path: 'src/deep' })
+    await settle()
+    expect(logged).toHaveBeenCalledWith('[dsh-atlas] sidebar folder open failed:', expect.anything())
+    logged.mockRestore()
+  })
+})
+
+describe('dsh-atlas ad panel face', () => {
+  it('refuses a session with no client scope by name', async () => {
+    ;(globalThis as unknown as Record<string, unknown>).__DSH_ATLAS_ADS__ = true
+    try {
+      const booted = await boot({ withoutSessionScope: true })
+      const face = booted.slotsRegister.mock.calls
+        .find(call => (call[0] as { id?: string })?.id === 'atlas-ad')?.[0] as { inject: (sessionId: string) => unknown }
+      expect(face).toBeDefined()
+      expect(() => face.inject('ghost')).toThrow(/has no client scope/)
+    } finally {
+      delete (globalThis as unknown as Record<string, unknown>).__DSH_ATLAS_ADS__
+    }
+  })
+})
+
+describe('dsh-atlas without a document', () => {
+  it('reads no draft scope on a client that has no DOM at all', async () => {
+    const booted = await boot({
+      atFileSearch: async () => ({ ok: true as const, value: [{ path: '/ws/a.ts', relative: 'a.ts', kind: 'file' as const }] }),
+    })
+    const scope = globalThis as unknown as { document?: Document }
+    const saved = scope.document
+    delete scope.document
+    try {
+      const rows = await registered(booted).candidates(s1, { query: 'file:', position: 'leading', signal: signal() })
+      // No draft to read means no scope: the unscoped index answers, nothing throws.
+      expect(rows.some(row => row.mentionKind === 'file')).toBe(true)
+    } finally {
+      scope.document = saved
+    }
+  })
+})
+
+describe('dsh-atlas reference activation through the source', () => {
+  it('runs the same action a sent-message click runs, and declines a token that is not ours', async () => {
+    const booted = await boot({
+      atFileSearch: async () => ({ ok: true as const, value: [{ path: '/ws/src/a.ts', relative: 'src/a.ts', kind: 'file' as const }] }),
+    })
+    const source = registered(booted)
+    await source.candidates(s1, { query: '', position: 'leading', signal: signal() })
+    await settle()
+    await source.openReference?.(s1, { ref: '@src/a.ts' } as never)
+    await settle()
+    expect(booted.openPath).toHaveBeenCalledWith({ path: '/ws/src/a.ts' })
+    expect(await source.openReference?.(s1, { ref: 'not-a-reference' } as never)).toBe(false)
+  })
+
+  it('reveals the folder of a file on its second click with no Sidebar in the build', async () => {
+    const booted = await boot({
+      atFileSearch: async () => ({ ok: true as const, value: [{ path: '/ws/src/a.ts', relative: 'src/a.ts', kind: 'file' as const }] }),
+      sessionList: { ids: ['s1'], byId: { s1: { displayTitle: 'one', cwd: '/ws' } } },
+    })
+    const source = registered(booted)
+    await source.candidates(s1, { query: '', position: 'leading', signal: signal() })
+    await settle()
+    const dock = dockOf(booted).inject('s1')
+    dock.onOpen({ kind: 'file', path: 'src/a.ts' })
+    await settle()
+    dock.onOpen({ kind: 'file', path: 'src/a.ts' })
+    await settle()
+    // With no Sidebar to reveal into, the click still opens the file itself: a
+    // second click that did nothing would be the worse answer.
+    expect(booted.openPath).toHaveBeenCalledWith({ path: '/ws/src/a.ts' })
+  })
+})
+
+describe('dsh-atlas ad panel with a scoped session', () => {
+  it('hands the panel the session menu', async () => {
+    ;(globalThis as unknown as Record<string, unknown>).__DSH_ATLAS_ADS__ = true
+    try {
+      const booted = await boot()
+      const face = booted.slotsRegister.mock.calls
+        .find(call => (call[0] as { id?: string })?.id === 'atlas-ad')?.[0] as { inject: (sessionId: string) => { menu: unknown } }
+      expect(face.inject('s1').menu).toBeDefined()
+    } finally {
+      delete (globalThis as unknown as Record<string, unknown>).__DSH_ATLAS_ADS__
+    }
+  })
+})
+
+describe('dsh-atlas crumbs for a path with empty segments', () => {
+  it('skips an empty segment and keeps a drive out of the strip', async () => {
+    const booted = await boot({
+      atFileBrowse: async (_id: SessionId, path: string) => ({ ok: true as const, value: { path, entries: [], truncated: false } as never }),
+    })
+    const picker = pickerOf(booted).inject('s1')
+    const posix = await picker.browse('/a//b', signal())
+    expect(posix.crumbs.map(crumb => crumb.name)).toEqual(['/', 'a', 'b'])
+    const windows = await picker.browse('E:/x', signal())
+    expect(windows.crumbs.map(crumb => crumb.name)).toEqual(['x'])
+  })
+})
+
+describe('dsh-atlas unverified runtime and a chooser that answers nothing', () => {
+  it('keeps every claim unverified when the runtime probe refuses', async () => {
+    const booted = await boot({
+      remoteAtlas: {
+        runtime: async () => ({ ok: false as const, error: { code: 'EIO', message: 'no runtime facts' } }),
+        gitChanges: async () => ({ ok: true as const, value: [] }),
+      },
+    })
+    await settle()
+    // Registration still works: an unverified version is not a refused provider.
+    const register = (booted.ctx as unknown as { atlas: { register: (p: unknown) => unknown } }).atlas.register
+    expect(register({ id: 'demo', display: 'Demo', scopes: [], testedOn: [], list: async () => [] })).toBeTypeOf('function')
+  })
+
+  it('inserts nothing when the product chooser comes back empty', async () => {
+    const booted = await boot({ uiWorkspace: { pickDirectory: async () => null, createDirectory: async () => '' } })
+    const folderRow = { name: '选择文件夹…', value: 'folder-choose', mentionKind: 'folder-choose' }
+    expect(registered(booted).onPick?.({ candidate: folderRow, session: s1, action: 'accept', span: { start: 0, end: 2 } })).toBeUndefined()
+    await settle()
+    expect(booted.sessionBail).not.toHaveBeenCalled()
+  })
+})
+
+describe('dsh-atlas reference inspection races', () => {
+  it('drops an inspection answer the draft has already superseded', async () => {
+    const resolvers: Array<(v: never) => void> = []
+    const inspect = vi.fn(() => new Promise((resolve) => { resolvers.push(resolve as (v: never) => void) }))
+    const booted = await boot({ atFileInspect: inspect as never })
+    const dock = dockOf(booted).inject('s1') as unknown as { requestInspect: (targets: readonly string[]) => void }
+    dock.requestInspect(['a.ts'])
+    dock.requestInspect(['b.ts'])
+    // The first answer arrives after the second ask: it must not overwrite it.
+    resolvers[0]!({ ok: true, value: [{ relative: 'a.ts', exists: true, kind: 'file' }] } as never)
+    await settle()
+    expect(inspect).toHaveBeenCalledTimes(2)
+    resolvers[1]!({ ok: true, value: [{ relative: 'b.ts', exists: true, kind: 'file' }] } as never)
+    await settle()
+  })
+
+  it('leaves an unknown mention kind inert', async () => {
+    const booted = await boot()
+    const bridge = referenceBridge(booted).inject('s1') as unknown as { actionFor: (link: unknown, again?: boolean) => unknown }
+    expect(bridge.actionFor({ kind: 'bogus', path: 'x' })).toBeUndefined()
+  })
+
+  it('takes no workspace root from an entry that carries none', async () => {
+    const booted = await boot({
+      atFileSearch: async () => ({ ok: true as const, value: [{ path: 'a.ts', relative: 'a.ts', kind: 'file' as const }] }),
+    })
+    await registered(booted).candidates(s1, { query: '', position: 'leading', signal: signal() })
+    await settle()
+    const openResource = vi.fn()
+    booted.ctx.provide('sidebarRight', { openResource })
+    dockOf(booted).inject('s1').onOpen({ kind: 'folder', path: 'src' })
+    await settle()
+    // With no root to subtract, the folder's own spelling is what the address uses.
+    expect(openResource).toHaveBeenCalledWith('dsh-resource://folder/', { params: { select: 'src' } })
+
+    // A row for the workspace root itself names no relative path: subtracting it
+    // yields the root again, so no other entry can be mined for a root either.
+    const rootOnly = await boot({
+      atFileSearch: async () => ({ ok: true as const, value: [{ path: '/ws', relative: '', kind: 'dir' as const }] }),
+    })
+    await registered(rootOnly).candidates(s1, { query: '', position: 'leading', signal: signal() })
+    await settle()
+    const openRoot = vi.fn()
+    rootOnly.ctx.provide('sidebarRight', { openResource: openRoot })
+    dockOf(rootOnly).inject('s1').onOpen({ kind: 'folder', path: 'src' })
+    await settle()
+    expect(openRoot).toHaveBeenCalledWith('dsh-resource://folder/', { params: { select: 'src' } })
+  })
+})

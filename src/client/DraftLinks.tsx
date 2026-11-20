@@ -91,11 +91,23 @@ export function DraftLinks({ actionFor, repeatClick, noteClick, useReferenceInfo
   )
   // The face is re-created on every injection and every verdict lands as a new
   // array: hold it in a ref so the document listeners install ONCE per mount.
-  const face = useRef({ actionFor, repeatClick, noteClick, verdict: (path: string) => verdictByPath.get(referenceKey(path)), resolveSession })
+  // The initializer is replaced by the effect below before any listener can run,
+  // so its arrows are never the ones that answer.
+  /* v8 ignore next -- replaced by the effect below before any listener installs */
+  const faceOf = () => ({
+    actionFor,
+    repeatClick,
+    noteClick,
+    verdict: (path: string) => verdictByPath.get(referenceKey(path)),
+    resolveSession,
+  })
+  /* v8 ignore next -- replaced by the effect below before any listener installs */
+  const face = useRef(faceOf())
   useEffect(() => {
-    face.current = { actionFor, repeatClick, noteClick, verdict: (path: string) => verdictByPath.get(referenceKey(path)), resolveSession }
+    face.current = faceOf()
   }, [actionFor, repeatClick, noteClick, verdictByPath, resolveSession])
   /** Repaint on demand from outside the install effect (a verdict that arrived late). */
+  /* v8 ignore next -- the install effect below replaces it before anything can repaint */
   const repaint = useRef(() => {})
 
   useEffect(() => {

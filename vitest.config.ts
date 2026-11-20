@@ -84,6 +84,10 @@ export default defineConfig({
       exclude: [
         // Pure type declarations: no runtime code exists to cover.
         'src/types.ts',
+        // Inlined ad bitmaps: assets, not code. They reach the bundle as data
+        // URLs (build.mjs dataurl loader), so there is no runtime branch to
+        // exercise and v8 records them as 0/0 files that would pin the total.
+        'src/client/ads/**',
       ],
     },
   },

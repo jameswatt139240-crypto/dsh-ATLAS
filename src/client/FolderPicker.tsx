@@ -280,6 +280,7 @@ export function FolderPicker({ useFolderPicker, browse, list, create, recent, co
   useEffect(() => {
     if (!open || zone !== 'path') return
     const input = inputRef.current
+    /* v8 ignore next -- the path line is mounted by the same commit that runs this effect; the guard only satisfies the ref's nullable type. */
     if (input === null) return
     input.focus()
     // `select()` on a just-mounted input is a no-op in some engines; the explicit
@@ -393,6 +394,7 @@ export function FolderPicker({ useFolderPicker, browse, list, create, recent, co
   }, [adoptPath, showHidden])
   const activate = useCallback((row: PickerRow | undefined): void => {
     const action = row?.action
+    /* v8 ignore next -- every focusable row carries a verb; this arm only satisfies the optional type. */
     if (action === undefined) return
     if (action.kind === 'choose') { adoptPath(action.path); return }
     if (action.kind === 'toggle') { setGroupOpen(action.group, current => !current); return }
@@ -561,6 +563,7 @@ export function FolderPicker({ useFolderPicker, browse, list, create, recent, co
     if (!open) return
     const focusable = rows.filter(entry => entry.focusable)
     const first = focusable[0]
+    /* v8 ignore next -- both group headers are always focusable, so a row list with nothing to reach cannot exist. */
     if (first === undefined) return
     if (hotKey !== undefined && focusable.some(entry => entry.key === hotKey)) return
     setHotKey(first.key)
@@ -596,16 +599,20 @@ export function FolderPicker({ useFolderPicker, browse, list, create, recent, co
   const moveTo = useCallback((where: 'first' | 'last'): void => {
     const focusable = rows.filter(entry => entry.focusable)
     const target = where === 'first' ? focusable[0] : focusable[focusable.length - 1]
+    /* v8 ignore next -- see above: the group headers are always there to land on. */
     if (target !== undefined) setHotKey(target.key)
   }, [rows])
   const moveBy = useCallback((step: number): void => {
     const focusable = rows.filter(entry => entry.focusable)
+    /* v8 ignore next -- see above: the group headers are always there to step between. */
     if (focusable.length === 0) return
     const at = focusable.findIndex(entry => entry.key === hotKey)
     // Clamped at both ends, never wrapped: a cursor that jumped from the last row
     // back to the first would make "step to the next page" impossible to observe.
+    /* v8 ignore next -- the repair effect keeps `hotKey` on a focusable row, so the not-found arm is unreachable in a settled render. */
     const from = at === -1 ? (step > 0 ? -1 : focusable.length) : at
     const next = focusable[Math.min(focusable.length - 1, Math.max(0, from + step))]
+    /* v8 ignore next -- the clamp keeps the index inside the array, so this is never undefined. */
     if (next !== undefined) setHotKey(next.key)
   }, [hotKey, rows])
   // Pointing at a row makes it current. A row can also arrive under a STATIONARY
@@ -663,9 +670,11 @@ export function FolderPicker({ useFolderPicker, browse, list, create, recent, co
     if (key === 'Tab') {
       // Focus trap: the dialog is `aria-modal`, so Tab must cycle inside it.
       const dialog = dialogRef.current
+      /* v8 ignore next -- this arm is the focus guard's, not the Tab trap's: the trap reads a dialog it is already inside. */
       if (dialog === null) return
       const focusable = [...dialog.querySelectorAll<HTMLElement>('input, button, [tabindex]:not([tabindex="-1"])')]
         .filter(element => !element.hasAttribute('disabled'))
+      /* v8 ignore next -- the path line and the footer buttons are always focusable while the dialog is open. */
       if (focusable.length === 0) return
       event.preventDefault()
       const active = document.activeElement

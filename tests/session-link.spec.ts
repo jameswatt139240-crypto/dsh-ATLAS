@@ -29,3 +29,12 @@ describe('the session link grammar', () => {
     expect(decodeSessionUri(uriOf('sess-a'))).toBe('sess-a')
   })
 })
+
+describe('a payload that does not re-encode to its own URI', () => {
+  it('refuses a URI whose JSON spelling is not canonical', () => {
+    // Hand-edited or foreign URIs can decode to a valid id yet not round-trip;
+    // only the canonical spelling is this plugin's own.
+    const padded = Buffer.from('  "sess-a"  ', 'utf8').toString('base64url')
+    expect(decodeSessionUri(`dsh-session:${padded}`)).toBeUndefined()
+  })
+})

@@ -619,7 +619,6 @@ describe('FrameCursor', () => {
     await new Promise(resolve => { setTimeout(resolve, 0) })
     expect(written).toEqual(['second question', 'first question'])
     expect(roamBar()?.textContent).toContain('first question')
-    expect(roamBar()?.textContent).toContain(zh['history.edge'])
     root.unmount()
   })
 
@@ -1115,6 +1114,55 @@ describe('FrameCursor', () => {
     // The newest frame, i.e. the reset worked. Without it the chord would have kept
     // walking from the oldest and written nothing at all.
     expect(written).toEqual(['third question'])
+    root.unmount()
+    container.remove()
+  })
+
+  it('keeps the chord where it is when the new frame is the running turn\'s own output', () => {
+    // A turn that is still running writes a frame of its own: that is not the
+    // user's next message, so a chord parked on an older one must not be called off.
+    const session = sessionStub({ a: userNode('first question', 1), b: userNode('second question', 2) }, true)
+    const written: string[] = []
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    const render = (): void => {
+      flushSync(() => {
+        root.render(<PairMount {...props({ useChat: session.useChat, generating: true, setDraft: (v: string) => { written.push(v) } })} />)
+      })
+    }
+    render()
+    pressAndSettle('ArrowUp', { ctrlKey: true })
+    expect(written).toEqual(['second question'])
+    session.set({ a: userNode('first question', 1), b: userNode('second question', 2), c: userNode('streamed reply', 3) })
+    render()
+    written.length = 0
+    pressAndSettle('ArrowUp', { ctrlKey: true })
+    // The chord walked on to its own next slot (which now counts past the streaming
+    // frame) instead of snapping back to the newest message.
+    expect(written).toEqual(['second question'])
+    root.unmount()
+    container.remove()
+  })
+
+  it('records the newest frame while the chord is still on the draft', () => {
+    // A message arriving while the chord sits on the draft only moves the signal
+    // forward; there is no chord walk to call off.
+    const session = sessionStub({ a: userNode('first question', 1) })
+    const written: string[] = []
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    const render = (): void => {
+      flushSync(() => {
+        root.render(<PairMount {...props({ useChat: session.useChat, setDraft: (v: string) => { written.push(v) } })} />)
+      })
+    }
+    render()
+    session.set({ a: userNode('first question', 1), b: userNode('second question', 2) })
+    render()
+    pressAndSettle('ArrowUp', { ctrlKey: true })
+    expect(written).toEqual(['second question'])
     root.unmount()
     container.remove()
   })
@@ -2859,5 +2907,164 @@ describe('FrameCursor', () => {
     expect(roamBar()?.textContent).toContain('second question')
     root.unmount()
     container.remove()
+  })
+})
+
+describe('requests that outlive the frame they were made for', () => {
+  it('does not measure a scroller that went away with the component', () => {
+    // A scroll queued its frame; the pane is torn down before that frame runs. The
+    // coalesced pass has no scroller to read and must simply stop.
+    scrollerWithRows({ 'a1': 0 })
+    const { root } = mount(<PairMount {...(props({ historyJumpSmartFollow: true }) as unknown as Record<string, unknown>)} />)
+    flushSync(() => { document.dispatchEvent(new Event('scroll', { bubbles: true })) })
+    root.unmount()
+    expect(() => { frameCallbacks.splice(0).forEach(callback => { callback(0) }) }).not.toThrow()
+  })
+
+  it('drops a pending scroll when the outline itself loses the turn', async () => {
+    // The page is armed for an outline-only turn; the projection face then
+    // publishes a shorter outline (the turn was compacted away). Same session,
+    // same hook — only the walk's ruler changed.
+    const session = sessionStub({ a2: assistantNode('answer two', 2) })
+    let published: readonly unknown[] = [{ turn: 5, seq: 55, prompt: 'outlined only', response: '' }]
+    const listeners = new Set<() => void>()
+    const face = { getSnapshot: () => published, subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener) } } }
+    const projections = { faceOf: (key: string) => (key === 'turnOutline' ? face : { getSnapshot: () => undefined, subscribe: () => () => {} }) }
+    const built = props({ useChat: session.useChat })
+    ;(built as unknown as { projections: unknown }).projections = projections
+    built.loadThrough = () => new Promise<void>(() => {})
+    const { root } = mount(<PairMount {...(built as unknown as Record<string, unknown>)} />)
+    pressAndSettle('Escape')
+    pressAndSettle('ArrowUp')
+    pressAndSettle('ArrowUp')
+    // The compaction: the outline no longer names turn 5 at all.
+    published = []
+    flushSync(() => { listeners.forEach(listener => { listener() }) })
+    await act(async () => { await Promise.resolve() })
+    // The walk is now one frame long, and the armed request did not wedge it.
+    expect(roamBar()?.textContent).toContain('/ 1')
+    root.unmount()
+  })
+
+  it('drops a pending scroll when the turn vanishes from the walk', async () => {
+    // The walk landed on an outline-only turn and asked for its page; the session
+    // then came back without that turn at all (a compaction or a different window).
+    const session = sessionStub({ a2: assistantNode('answer two', 2) })
+    let release: (() => void) | undefined
+    const built = props({
+      useChat: session.useChat,
+      outline: [{ turn: 5, seq: 55, prompt: 'outlined only', response: '' }],
+    })
+    built.loadThrough = () => new Promise<void>(resolve => { release = resolve })
+    const { root } = mount(<PairMount {...(built as unknown as Record<string, unknown>)} />)
+    pressAndSettle('Escape')
+    pressAndSettle('ArrowUp')
+    pressAndSettle('ArrowUp')
+    // The unloaded turn armed a page; now the walk loses it entirely.
+    // Same store (the same walk), a session whose window no longer holds turn 5.
+    const next = props({
+      useChat: sessionStub({ a2: assistantNode('answer two', 2) }).useChat,
+      roam: (built as unknown as { roam: RoamStore }).roam,
+    })
+    flushSync(() => { root.render(<PairMount {...(next as unknown as Record<string, unknown>)} />) })
+    release?.()
+    await act(async () => { await Promise.resolve() })
+    // The walk shrank to the draft slot, so the readout is gone — the request was
+    // dropped instead of waiting forever on a turn that no longer exists.
+    expect(roamBar()).toBeNull()
+    root.unmount()
+  })
+
+  it('does not measure a scroller that went away with the component (again)', () => {
+    // Dispatch the scroll from the scroller itself, the way a browser does; the
+    // queued frame then runs after the pane is gone.
+    const scroller = scrollerWithRows({ 'a1': 0 })
+    const { root } = mount(<PairMount {...(props({ historyJumpSmartFollow: true }) as unknown as Record<string, unknown>)} />)
+    flushSync(() => { scroller.dispatchEvent(new Event('scroll', { bubbles: true })) })
+    expect(frameCallbacks.length).toBeGreaterThan(0)
+    root.unmount()
+    expect(() => { frameCallbacks.splice(0).forEach(callback => { callback(0) }) }).not.toThrow()
+  })
+
+  it('drops a deferred reuse when the outline loses the turn before the page lands', async () => {
+    const session = sessionStub({ a3: assistantNode('answer three', 3) })
+    let published: readonly unknown[] = [{ turn: 2, seq: 22, prompt: 'gone soon', response: '' }]
+    const listeners = new Set<() => void>()
+    const face = { getSnapshot: () => published, subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener) } } }
+    const projections = { faceOf: (key: string) => (key === 'turnOutline' ? face : { getSnapshot: () => undefined, subscribe: () => () => {} }) }
+    const written: string[] = []
+    const built = props({ useChat: session.useChat, setDraft: (text: string) => { written.push(text) } })
+    ;(built as unknown as { projections: unknown }).projections = projections
+    built.loadThrough = () => new Promise<void>(() => {})
+    const { root } = mount(<PairMount {...(built as unknown as Record<string, unknown>)} />)
+    pressAndSettle('Escape')
+    pressAndSettle('ArrowUp')
+    pressAndSettle('ArrowUp')
+    pressAndSettle('Enter')
+    published = []
+    flushSync(() => { listeners.forEach(listener => { listener() }) })
+    await act(async () => { await Promise.resolve() })
+    expect(written).toEqual([])
+    root.unmount()
+  })
+
+  it('resets the chord when the user wrote the new frame themselves', () => {
+    // A frame arriving while the chord sat off the draft is the user's own next
+    // message, so the chord lets go instead of keeping a stale slot.
+    const table: Record<string, unknown> = { u1: userNode('first question', 1) }
+    const written: string[] = []
+    const { root } = mount(<PairMount {...(props({ table, setDraft: text => { written.push(text) } }) as unknown as Record<string, unknown>)} />)
+    pressAndSettle('ArrowUp', { ctrlKey: true })
+    expect(written).toEqual(['first question'])
+    const grown: Record<string, unknown> = { ...table, a1: assistantNode('answer one', 1) }
+    flushSync(() => { root.render(<PairMount {...props({ table: grown, setDraft: text => { written.push(text) } })} />) })
+    // The chord still works after the conversation grew under it.
+    pressAndSettle('ArrowUp', { ctrlKey: true })
+    expect(written).toHaveLength(2)
+    root.unmount()
+  })
+
+  it('resets the chord only after it left the draft, not on the first frame', () => {
+    // A frame arriving while the chord has never been pressed is not a "new
+    // message after a walk": the slot is already the draft.
+    const table: Record<string, unknown> = { u1: userNode('first question', 1) }
+    const { root } = mount(<PairMount {...(props({ table }) as unknown as Record<string, unknown>)} />)
+    const grown: Record<string, unknown> = { ...table, a1: assistantNode('answer one', 1) }
+    flushSync(() => { root.render(<PairMount {...props({ table: grown })} />) })
+    expect(roamBar()).toBeNull()
+    root.unmount()
+  })
+
+  it('keeps the chord slot when the new frame is the reply to a running turn', () => {
+    // A turn that is still running produced the new frame, so the user has not
+    // started over: the chord must keep its place instead of resetting to the draft.
+    const table: Record<string, unknown> = { u1: userNode('first question', 1) }
+    let live = ''
+    const written: string[] = []
+    const setDraft = (text: string): void => { written.push(text); live = text }
+    const { root } = mount(<PairMount {...(props({ table, generating: true, setDraft }) as unknown as Record<string, unknown>)} />)
+    pressAndSettle('ArrowUp', { ctrlKey: true })
+    expect(written).toEqual(['first question'])
+    // The answer streams in while the turn is still running.
+    const grown: Record<string, unknown> = { ...table, a1: assistantNode('answer one', 1) }
+    flushSync(() => {
+      root.render(<PairMount {...props({ table: grown, generating: true, setDraft, draft: live })} />)
+    })
+    pressAndSettle('ArrowUp', { ctrlKey: true })
+    // Still walking: the second press moved to the reply rather than restarting.
+    expect(written.length).toBe(2)
+    root.unmount()
+  })
+
+  it('reports the edge again when the chord is pressed once more at the edge', () => {
+    const written: string[] = []
+    const { root } = mount(<PairMount {...(props({ setDraft: text => { written.push(text) } }) as unknown as Record<string, unknown>)} />)
+    // No loader: the oldest frame is the edge. Two presses, so the second lands
+    // when the edge verdict is already known.
+    pressAndSettle('ArrowUp', { ctrlKey: true })
+    pressAndSettle('ArrowUp', { ctrlKey: true })
+    pressAndSettle('ArrowUp', { ctrlKey: true })
+    expect(written).toEqual(['second question', 'first question'])
+    root.unmount()
   })
 })

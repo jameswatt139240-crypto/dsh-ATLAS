@@ -193,7 +193,7 @@ export interface MentionSourceDeps {
   /** Locale binder for time/tier labels (defaults to zh copy). */
   t?: (key: string, params?: Record<string, string>) => string
   /** Record one referenced path into the session workspace's recent list. */
-  onRecent?(sessionId: SessionId, relative: string): void
+  onRecent?(sessionId: SessionId, absolute: string, relative: string): void
   /** Record one pick in the cross-category usage counters. */
   onUsage?(sessionId: SessionId, kind: string, value: string): void
   /** The live cross-category pick counters (highest count first). */
@@ -1201,7 +1201,7 @@ export function createMentionSource(deps: MentionSourceDeps): MentionSource {
     readonly at: number
   }
   const scopeListings = new Map<string, ScopeListingCache>()
-  const fetchScopeListing = (sessionId: SessionId, path: string, signal?: AbortSignal): Promise<DirectoryListing> => {
+  const fetchScopeListing = (sessionId: SessionId, path: string, signal: AbortSignal): Promise<DirectoryListing> => {
     // The only caller (`scopeFileRows`) has already checked that this build has a
     // listing seam, so the face is narrowed here instead of guarded twice.
     const load = deps.list as (id: SessionId, directory: string, signal: AbortSignal) => Promise<DirectoryListing>
@@ -1231,7 +1231,6 @@ export function createMentionSource(deps: MentionSourceDeps): MentionSource {
     const abort = new AbortController()
     const promise = load(sessionId, path, abort.signal)
     remember({ promise, abort, at })
-    if (signal === undefined) return promise
     return promise.then(value => (signal.aborted ? { path, entries: [] } : value))
   }
 
@@ -1358,7 +1357,9 @@ export function createMentionSource(deps: MentionSourceDeps): MentionSource {
     query: string,
   ): readonly MentionCandidate[] => {
     const trimmed = query.trim()
-    const outside = externalFolderRows(sessionId)
+    // Every row `externalFolderRows` builds carries its absolute value, so the
+    // filter below reads it without re-checking what this file guarantees.
+    const outside = externalFolderRows(sessionId) as readonly (MentionCandidate & { readonly value: string })[]
     const own = candidateRows(rankFilesWithFuzzy(files, query, MAX_CANDIDATES), 'dir', false, t)
     if (trimmed !== '') {
       // Filtering is TWO tiers, in this order (user's口径):
@@ -1374,9 +1375,9 @@ export function createMentionSource(deps: MentionSourceDeps): MentionSource {
       const ownByName = dirs.filter(file => nameOf(file.relative).includes(needle))
       const ownNamed = new Set(ownByName)
       const ownByPath = dirs.filter(file => !ownNamed.has(file) && file.relative.toLowerCase().includes(needle))
-      const outsideByName = outside.filter(row => nameOf(row.value ?? '').includes(needle))
+      const outsideByName = outside.filter(row => nameOf(row.value).includes(needle))
       const namedOutside = new Set(outsideByName.map(row => row.value))
-      const outsideByPath = outside.filter(row => !namedOutside.has(row.value) && (row.value ?? '').toLowerCase().includes(needle))
+      const outsideByPath = outside.filter(row => !namedOutside.has(row.value) && row.value.toLowerCase().includes(needle))
       const byPath = [...candidateRows(ownByPath, 'dir', false, t), ...outsideByPath]
       // The path group is folded only when it would CROWD the name matches: the
       // user's口径 is "如果多就折叠", so when the rest of the budget covers it the
@@ -1529,11 +1530,10 @@ export function createMentionSource(deps: MentionSourceDeps): MentionSource {
   const resolveFileScope = async (
     sessionId: SessionId,
     query: string,
-    signal?: AbortSignal,
+    abort: AbortSignal,
   ): Promise<FileScope | undefined> => {
     const read = deps.scopeFolder
     if (read === undefined) return undefined
-    const abort = signal ?? new AbortController().signal
     let path: string | undefined
     try {
       path = await read(sessionId, abort)
@@ -2191,7 +2191,7 @@ export function createMentionSource(deps: MentionSourceDeps): MentionSource {
             ? { relative: candidate.value, kind: 'file' as const }
             : undefined)
         if (file === undefined) return undefined
-        if (file.kind === 'file' && entry !== undefined) deps.onRecent?.(session.sessionId, file.relative)
+        if (file.kind === 'file' && entry !== undefined) deps.onRecent?.(session.sessionId, entry.path, file.relative)
         deps.onUsage?.(session.sessionId, file.kind === 'dir' ? 'dir' : 'file', file.relative)
         // Plain-text reference: the draft gains the readable @path token. A
         // trailing slash marks a directory mention without reading descendants.

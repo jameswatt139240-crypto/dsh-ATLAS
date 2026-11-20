@@ -502,3 +502,42 @@ describe('AtFileSection', () => {
     root.unmount()
   })
 })
+describe('the section remembers the Workspace it was last shown on', () => {
+  it('starts on the remembered Workspace instead of the most recent one', () => {
+    const viewState: AtFileSectionViewState = { filterScope: 'global', selectedWorkspace: '/ws/remembered' }
+    const { root, container } = mount(
+      <AtFileSection {...props({
+        // The most recent Workspace is the other one; the remembered choice wins.
+        workspaces: [workspace('w1', '/ws/remembered', 'remembered'), workspace('w2', '/ws/other', 'other')],
+        recentWorkspaceId: 'w2',
+        viewState,
+      })} />,
+    )
+    click(button(container, zh['settings.workspace']))
+    const select = container.querySelector('.dsh_atFile_workspaceSelect') as HTMLSelectElement
+    // The remembered path is kept even though it is not one of the known Workspaces.
+    expect(select.value).toBe('/ws/remembered')
+    root.unmount()
+  })
+
+  it('uses a Workspace creation time when none of its Sessions has one', () => {
+    const stale = workspace('w1', '/ws/stale', 'stale')
+    stale.sessionIds = ['ghost']
+    stale.createdAt = '2020-01-01T00:00:00.000Z'
+    const fresh = workspace('w2', '/ws/fresh', 'fresh')
+    fresh.sessionIds = ['live']
+    fresh.createdAt = '2021-01-01T00:00:00.000Z'
+    const { root, container } = mount(
+      <AtFileSection {...props({
+        workspaces: [stale, fresh],
+        sessions: { live: { updatedAt: Date.parse('2024-01-01T00:00:00.000Z') } },
+      })} />,
+    )
+    click(button(container, zh['settings.workspace']))
+    const select = container.querySelector('.dsh_atFile_workspaceSelect') as HTMLSelectElement
+    // `ghost` has no Session record, so its Workspace falls back to `createdAt`;
+    // the one with a real Session is still the most recent.
+    expect(select.value).toBe('/ws/fresh')
+    root.unmount()
+  })
+})

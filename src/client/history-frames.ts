@@ -349,9 +349,10 @@ export function buildFrames(
       // One stop per ANSWER, not per streamed node: only the node that carries
       // the turn's last prose is the answer (see `lastAnswerKey`).
       if (turn === undefined || lastAnswerKey.get(turn) !== key) continue
-      const replyText = answerTextOf(node)
-      if (replyText === undefined || replyText.trim() === '') continue
-      const replyData = node.data as { seq?: unknown; time?: unknown } | undefined
+      // `lastAnswerKey` only records nodes whose prose was non-empty in the first
+      // pass, so this read cannot come back empty.
+      const replyText = answerTextOf(node) as string
+      const replyData = node.data as { seq?: unknown; time?: unknown }
       frames.push({
         key,
         seq: typeof replyData?.seq === 'number' ? replyData.seq : 0,

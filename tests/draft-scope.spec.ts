@@ -24,6 +24,9 @@ describe('draft scope', () => {
     // handle that names no resource at all.
     await expect(draftScopeOf(['@src/view.ts', '@file:'], probe())).resolves.toBeUndefined()
     await expect(draftScopeOf(['@skill:blender', '@plugin:x', '@file:'], probe())).resolves.toBeUndefined()
+    // A hole in the token list (the composer reports the trigger's own span as an
+    // empty token when it is still being typed) is skipped, not tokenised.
+    await expect(draftScopeOf(['', '@e:/outsidedir/', '@file:'], probe(['e:/outsidedir']))).resolves.toBe('e:/outsidedir')
   })
 
   it('never scopes a token by itself, so a typed category is not its own folder', async () => {
@@ -33,5 +36,14 @@ describe('draft scope', () => {
     await expect(draftScopeOf(['@file:Ea'], host)).resolves.toBeUndefined()
     await expect(draftScopeOf(['@folder:Ea'], host)).resolves.toBeUndefined()
     expect(host.isFolder).not.toHaveBeenCalled()
+  })
+})
+
+describe('a tokens array with a hole', () => {
+  it('skips the missing entry instead of failing the whole draft', () => {
+    // The composer's token list is built by scanning; a gap (a token removed in
+    // the same pass) must not abort the search for an earlier folder.
+    const tokens: readonly string[] = ['@e:/outsidedir/', undefined as unknown as string]
+    return expect(draftScopeOf(tokens, probe(['e:/outsidedir']))).resolves.toBe('e:/outsidedir')
   })
 })

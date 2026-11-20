@@ -493,3 +493,49 @@ describe('frameKeyOf', () => {
     expect(frameKeyOf({ turn: undefined, key: 'k' } as HistoryFrame)).toBe('k')
   })
 })
+
+describe('frames the wire damaged, and a window ordering around an unturn\u2019d frame', () => {
+  it('still stops on an answer whose node carries no seq or time', () => {
+    // A damaged-but-readable assistant node: the prose is what makes the row, the
+    // numbers are decoration and degrade to 0 rather than dropping the stop.
+    const damaged = {
+      kind: 'assistant-step',
+      data: { blocks: [{ kind: 'text', text: 'an answer without numbers' }] },
+      location: { kind: 'turn', turn: { turn: 1 } },
+    }
+    const frames = buildFrames(['a'], () => damaged as never)
+    expect(frames).toHaveLength(1)
+    expect(frames[0]?.text).toBe('an answer without numbers')
+    expect(frames[0]?.seq).toBe(0)
+    expect(frames[0]?.time).toBe(0)
+  })
+
+  it('sorts an unturn\u2019d loaded frame when it is the right-hand side', () => {
+    // The unturn'd frame is the SECOND loaded node here, so the comparator sees it
+    // as `right` and its missing turn must still count as "before the numbered".
+    const table: Record<string, unknown> = {
+      a2: assistantNode([{ kind: 'text', text: 'second' }], 2),
+      u1: userNode([{ type: 'text', text: 'first' }], { turn: 1 }),
+      loose: { kind: 'user', data: { content: [{ type: 'text', text: 'loose' }], seq: 9, time: 9 }, location: { kind: 'session' } },
+    }
+    const frames = buildFrames(Object.keys(table), key => table[key] as never, 'message', [
+      { turn: 7, seq: 77, prompt: 'outline turn', response: '' },
+    ])
+    const turns = frames.map(frame => frame.turn)
+    // Ascending, with the unturn'd frame first and the outline extra last.
+    expect(turns[0]).toBeUndefined()
+    expect(turns.at(-1)).toBe(7)
+  })
+})
+
+describe('a reply that carries its own sequence numbers', () => {
+  it('keeps the numbers the wire sent instead of zeroes', () => {
+    const frames = buildFrames(
+      ['a1'],
+      () => ({ kind: 'assistant-step', data: { blocks: [{ kind: 'text', text: 'answered' }], seq: 41, time: 4_100 }, location: { kind: 'turn', turn: { turn: 1 } } }) as never,
+      'message',
+      undefined,
+    )
+    expect(frames[0]).toMatchObject({ seq: 41, time: 4_100 })
+  })
+})

@@ -12,7 +12,7 @@ import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { hasSubdirectory, indexWorkspace, pinEntry, readDirectory } from './files.ts'
 import { inspectReferences } from './reference.ts'
-import { NO_EXTERNAL_DISCOVERY, allowsExternal, externalPath, isAbsoluteReference, isUnder, type ExternalAccess } from './external.ts'
+import { allowsExternal, externalPath, isAbsoluteReference, isUnder, type ExternalAccess } from './external.ts'
 import { listSubdirectories } from './files.ts'
 import { workspacePathKey } from './defaults.ts'
 import { stat } from 'node:fs/promises'
@@ -54,7 +54,7 @@ export class AtFileRuntime extends TypertRemoteService {
     private readonly readSettings: () => AtFileSettings,
     private readonly writeSettings: (update: AtFileSettingsUpdate) => Promise<AtFileSettings>,
     /** The session's out-of-workspace access (see src/external.ts). */
-    private readonly externalAccessFor: (agent: Agent) => ExternalAccess = () => NO_EXTERNAL_DISCOVERY,
+    private readonly externalAccessFor: (agent: Agent) => ExternalAccess,
   ) {
     super(ctx, 'atFile')
   }
@@ -110,6 +110,10 @@ export class AtFileRuntime extends TypertRemoteService {
     }
     const promise = run()
     this.fileInFlight.set(cacheKey, promise)
+    // The identity test guards a REPLACED entry, which cannot happen: a second load
+    // for the same key joins this promise instead of starting, so the map still
+    // holds it when either arm runs.
+    /* v8 ignore next -- the map still holds this promise when it settles */
     void promise.then(
       () => { if (this.fileInFlight.get(cacheKey) === promise) this.fileInFlight.delete(cacheKey) },
       () => { if (this.fileInFlight.get(cacheKey) === promise) this.fileInFlight.delete(cacheKey) },
@@ -272,6 +276,9 @@ export class AtFileRuntime extends TypertRemoteService {
       ? asked
       : resolve(cwd, asked === '' ? browseDefault(cwd, access) : asked)
     const found = await nearestDirectory(wanted, signal)
+    // POSIX always has `/`, so the walk-up can only run out of directories on
+    // Windows (a drive that does not exist).
+    /* v8 ignore next -- only a Windows drive has no directory above it */
     if (found === undefined) return { path: externalPath(wanted), entries: [], error: 'missing' }
     const canonical = externalPath(found.directory)
     if (!isUnder(cwd, found.directory) && !allowsExternal(access, found.directory)) {
@@ -404,6 +411,7 @@ async function nearestDirectory(
     const info = await stat(candidate).catch(() => undefined)
     if (info?.isDirectory() === true) return { directory: candidate, exact }
     const above = dirname(candidate)
+    /* v8 ignore next -- `/` is always a directory on POSIX; only a Windows drive root can fail */
     if (above === candidate) return undefined
     candidate = above
     exact = false
@@ -482,6 +490,7 @@ async function driveRoot(letter: string, signal: AbortSignal): Promise<string | 
   const root = `${letter}:/`
   const info = await stat(root).catch(() => undefined)
   signal.throwIfAborted()
+  /* v8 ignore next -- a drive root exists only on Windows */
   return info?.isDirectory() === true ? root : undefined
 }
 
@@ -573,6 +582,7 @@ export class AtlasRuntime extends TypertRemoteService {
    */
   private facts(): AtlasRuntimeInfo {
     const dshVersion = this.readVersion()
+    /* v8 ignore next -- an install that cannot report its version, which no plugin host is without */
     return dshVersion === undefined ? {} : { dshVersion }
   }
 

@@ -27,6 +27,10 @@ function mountTab(options: {
   select?: string
   /** Where to mount, for the one case that needs a scrollable ancestor. */
   host?: HTMLElement
+  /** Override the tab's own identity, for the address fallbacks. */
+  contentId?: string
+  /** Override the address the tab was opened at. */
+  address?: string
 }): {
   container: HTMLElement
   root: Root
@@ -52,9 +56,9 @@ function mountTab(options: {
       tab: {
         id: 't1',
         kind: 'atlas-folder',
-        contentId: folderAddress(options.path),
+        contentId: options.contentId ?? folderAddress(options.path),
         navigation: {
-          address: folderAddress(options.path),
+          address: options.address ?? folderAddress(options.path),
           params: state.select === undefined ? undefined : { select: state.select },
           revision: 0,
         },
@@ -458,5 +462,158 @@ describe('the folder address', () => {
     expect(folderTabDefinition(t).patterns).toEqual(['dsh-resource://folder/**'])
     expect(folderTabDefinition(t).title('dsh-resource://folder/E:/root/ws')).toBe('ws')
     expect(folderTabDefinition(t).title('dsh-resource://nope')).toBe(zh['folder.title'])
+  })
+})
+
+describe('the folder tab: the address it was opened at, and the questions it answers late', () => {
+  it('names a folder tab by the folder, or by its generic title at a root', () => {
+    const definition = folderTabDefinition(t)
+    expect(definition.title(folderAddress('E:/root/ws/'))).toBe('ws')
+    // A root has no last segment to name: the tab says what it is instead.
+    expect(definition.title(folderAddress('/'))).toBe(t('folder.title'))
+    expect(definition.title('dsh-resource://files/x')).toBe(t('folder.title'))
+  })
+
+  it('falls back to the navigation address when the identity is not a folder', async () => {
+    const { asked, root } = mountTab({
+      path: 'E:/root/ws',
+      contentId: 'dsh-resource://files/x',
+      listing: path => listing(path, []),
+    })
+    await settle()
+    expect(asked[0]).toBe('E:/root/ws')
+    root.unmount()
+  })
+
+  it('lists nothing in particular when neither identity nor address name a folder', async () => {
+    const { asked, root } = mountTab({
+      path: 'E:/root/ws',
+      contentId: 'dsh-resource://files/x',
+      address: 'dsh-resource://files/x',
+      listing: path => listing(path, []),
+    })
+    await settle()
+    expect(asked[0]).toBe('')
+    root.unmount()
+  })
+
+  it('says nothing when the listing lands after the tab is gone', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    let resolveList: ((value: DirectoryListing) => void) | undefined
+    const stub = {
+      useTabInfo: () => ({
+        tab: { contentId: folderAddress('E:/x'), navigation: { address: folderAddress('E:/x'), params: undefined, revision: 0 }, signal: new AbortController().signal },
+      }),
+      list: () => new Promise<DirectoryListing>((resolve) => { resolveList = resolve }),
+      openFile: () => {},
+      openNative: () => {},
+      t,
+      session: {},
+    }
+    flushSync(() => { root.render(<FolderTab {...(stub as unknown as FolderTabProps)} />) })
+    root.unmount()
+    resolveList?.(listing('E:/x', [{ name: 'a.ts', kind: 'file' }]))
+    await settle()
+    expect(container.textContent).toBe('')
+  })
+
+  it('scrolls up to a row that sits above the viewport', async () => {
+    const layout = fakeLayout(30)
+    layout.host.scrollTop = 50
+    try {
+      const { root } = mountTab({
+        path: 'E:/root/ws',
+        listing: path => listing(path, [{ name: 'a.ts', kind: 'file' }]),
+        select: 'a.ts',
+        host: layout.host,
+      })
+      await settle()
+      expect(layout.host.scrollTop).toBe(30)
+      root.unmount()
+    } finally {
+      layout.restore()
+    }
+  })
+
+  it('hands the OS opener the address’s folder even before the listing lands', () => {
+    const openNative = vi.fn()
+    const { container, root } = mountTab({
+      path: 'E:/root/ws',
+      listing: path => listing(path, []),
+      openNative,
+    })
+    const button = container.querySelector('.dsh_atlas_folderOpen')
+    expect(button).not.toBeNull()
+    flushSync(() => { button?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })) })
+    expect(openNative).toHaveBeenCalledWith('E:/root/ws')
+    root.unmount()
+  })
+})
+
+describe('the folder tab: an answer the tab stopped waiting for', () => {
+  it('ignores a listing for a selection it has already moved past', async () => {
+    const pending: Array<(value: DirectoryListing) => void> = []
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    const state: { select?: string } = { select: 'a.ts' }
+    const stub = {
+      useTabInfo: () => ({
+        tab: {
+          contentId: folderAddress('E:/x'),
+          navigation: { address: folderAddress('E:/x'), params: { select: state.select }, revision: 0 },
+          signal: new AbortController().signal,
+        },
+      }),
+      list: () => new Promise<DirectoryListing>((resolve) => { pending.push(resolve) }),
+      openFile: () => {},
+      openNative: () => {},
+      t,
+      session: {},
+    }
+    const render = (): void => { flushSync(() => { root.render(<FolderTab {...(stub as unknown as FolderTabProps)} />) }) }
+    render()
+    state.select = 'b.ts'
+    render() // aborts the first request
+    expect(pending.length).toBeGreaterThan(1)
+    pending[0]!(listing('E:/x', [{ name: 'a.ts', kind: 'file' }]))
+    await settle()
+    // The stale answer never lands: the tab is still waiting for the new one.
+    expect(container.querySelector('.dsh_atlas_folderRow')).toBeNull()
+    root.unmount()
+  })
+})
+
+describe('the folder tab: a refusal it stopped waiting for', () => {
+  it('keeps a refused listing for a superseded selection out of the tab', async () => {
+    const pending: Array<{ resolve: (value: DirectoryListing) => void; reject: (error: unknown) => void }> = []
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    const state: { select?: string } = { select: 'a.ts' }
+    const stub = {
+      useTabInfo: () => ({
+        tab: {
+          contentId: folderAddress('E:/x'),
+          navigation: { address: folderAddress('E:/x'), params: { select: state.select }, revision: 0 },
+          signal: new AbortController().signal,
+        },
+      }),
+      list: () => new Promise<DirectoryListing>((resolve, reject) => { pending.push({ resolve, reject }) }),
+      openFile: () => {},
+      openNative: () => {},
+      t,
+      session: {},
+    }
+    const render = (): void => { flushSync(() => { root.render(<FolderTab {...(stub as unknown as FolderTabProps)} />) }) }
+    render()
+    state.select = 'b.ts'
+    render()
+    pending[0]!.reject(new Error('access denied'))
+    await settle()
+    expect(container.querySelector('[role="alert"]')).toBeNull()
+    root.unmount()
   })
 })

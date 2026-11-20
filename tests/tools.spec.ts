@@ -1,5 +1,6 @@
 /** Model-facing mention tools: past-chat listing/reading and plugin info. */
 import { describe, expect, it, vi } from 'vitest'
+import { AT_FILE_INVOCATIONS } from '../src/contract.ts'
 import {
   formatChatCandidate,
   projectSurface,
@@ -227,5 +228,35 @@ describe('registerMentionTools', () => {
     }
     registerMentionTools(ctxWith({ tools, pluginInventory: inventory }) as never, () => ENABLED)
     expect(String(await tools.registered.plugin_info!.execute({}, { agent }))).toContain('- dsh-async [enabled]')
+  })
+})
+
+describe('shapes the wire may omit', () => {
+  it('projects an event that carries only text, and one with no text at all', () => {
+    // Older sessions store the message as one `text` field; a message with
+    // neither field has nothing to project.
+    expect(projectSurface([
+      { type: 'user/message', text: 'typed plainly' },
+      { type: 'assistant/message' },
+      { type: 'assistant/message', content: [{ type: 'text' }] },
+    ])).toBe('[user/message] typed plainly')
+  })
+
+  it('asks the resolver for every chat when no query was given', async () => {
+    const tools = captureTools()
+    const listCandidates = vi.fn(async () => [{ sessionId: 'sess-a', label: 'Everything', cwd: '/work', createdAt: 1 }])
+    registerMentionTools(ctxWith({ tools, sessionReferenceResolver: { listCandidates } }) as never, () => ENABLED)
+    await tools.registered.past_chats!.execute({}, { agent })
+    expect(listCandidates).toHaveBeenCalledWith(agent, '', 20, undefined)
+  })
+})
+
+describe('the codec both Harness validators read', () => {
+  it('answers the schema for a descriptor that is validated by hand', () => {
+    // One checkout calls `codec.create()` instead of reading `codec.schema`;
+    // both fields must answer the same validator.
+    const descriptor = AT_FILE_INVOCATIONS[0]!
+    const result = descriptor.result as unknown as { create(): unknown; schema: unknown }
+    expect(result.create()).toBe(result.schema)
   })
 })

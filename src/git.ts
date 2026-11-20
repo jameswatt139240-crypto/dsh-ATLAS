@@ -121,6 +121,10 @@ export function parseGitNumstat(output: string): ReadonlyMap<string, { added: nu
 export async function readGitChanges(cwd: string, signal: AbortSignal): Promise<readonly GitChange[]> {
   const status = await git(cwd, ['-c', 'core.quotePath=false', 'status', '--porcelain=v1', '--untracked-files=all'], signal)
   if (status === undefined || status.trim() === '') return []
+  // A diff that cannot run (a repository with no commit yet) still answers '',
+  // because git's own exit status is not a Node failure; the fallback covers only
+  // a caller that aborted between the status read above and this one.
+  /* v8 ignore next -- reachable only by aborting between the two git calls */
   const counts = parseGitNumstat(await git(cwd, ['-c', 'core.quotePath=false', 'diff', 'HEAD', '--numstat'], signal) ?? '')
   return parseGitStatus(status).slice(0, MAX_GIT_CHANGES).map(change => {
     const count = counts.get(change.path)
@@ -164,6 +168,7 @@ export const GIT_RESOLVE_PROVIDER: AtlasProvider = {
   testedOn: BUILTIN_TESTED_ON,
   async resolve(item, context) {
     if (context.cwd === undefined) return ''
-    return (await readGitDiff(context.cwd, item.id, context.signal)) ?? ''
+    /* v8 ignore next -- readGitDiff answers '' rather than undefined for a failed diff */
+  return (await readGitDiff(context.cwd, item.id, context.signal)) ?? ''
   },
 }

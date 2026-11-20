@@ -1,7 +1,7 @@
 /** Built-in file icon classification and SVG rendering. */
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { fileIcon, fileIconKind, leafIcon, menuGlyphColor, type FileIconKind } from '../src/client/icons.tsx'
+import { fileIcon, fileIconKind, leafIcon, menuGlyph, menuGlyphColor, type FileIconKind } from '../src/client/icons.tsx'
 import type { FileEntry } from '../src/client/remote.ts'
 
 function entry(relative: string, kind: 'file' | 'dir' = 'file'): FileEntry {
@@ -126,5 +126,20 @@ describe('menu glyph accents', () => {
       { mentionKind: 'category' },
     ]
     for (const row of data) expect(menuGlyphColor(row)).toBeUndefined()
+  })
+})
+describe('menu glyphs for rows without a file type', () => {
+  it('falls back to the kind glyph and to the provider glyph', () => {
+    // A row the source never described: no `atFileKind`, no `value`.
+    const bare = renderToStaticMarkup(menuGlyph({ mentionKind: 'file' } as never))
+    expect(bare).toContain('tabler-icon-file')
+    // A category with no value at all still renders (its glyph is the plugin's).
+    expect(renderToStaticMarkup(menuGlyph({ mentionKind: 'category' } as never))).toContain('svg')
+    // A provider category names its provider by id when the value carried none.
+    expect(renderToStaticMarkup(menuGlyph({ mentionKind: 'category', providerId: 'git' } as never))).toContain('svg')
+    // A provider row whose id has no brand glyph falls back to the plugin glyph.
+    expect(renderToStaticMarkup(menuGlyph({ mentionKind: 'provider', providerId: 'acme' } as never))).toContain('svg')
+    // A plain row with no kind at all.
+    expect(renderToStaticMarkup(menuGlyph({ mentionKind: 'back' } as never))).toContain('svg')
   })
 })

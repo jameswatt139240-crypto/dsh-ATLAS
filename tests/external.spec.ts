@@ -170,3 +170,11 @@ describe('external ledger', () => {
     expect(externalKnownFor(settings(), 'E:/ws-a')).toEqual([])
   })
 })
+
+describe('isUnder on a root that already ends in a separator', () => {
+  it('does not turn the separator into a double slash', () => {
+    expect(isUnder('E:/', 'E:/work/a.ts')).toBe(true)
+    expect(isUnder('E:/', 'E:/')).toBe(true)
+    expect(isUnder('E:/', 'E:/other/a.ts')).toBe(true)
+  })
+})

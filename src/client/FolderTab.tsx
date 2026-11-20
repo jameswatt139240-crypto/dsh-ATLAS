@@ -145,6 +145,7 @@ export function FolderTab({ useTabInfo, list, openFile, openNative, t }: FolderT
           title={t('folder.up')}
           aria-label={t('folder.up')}
           disabled={listing?.parent === undefined}
+          /* v8 ignore next -- the button is disabled exactly when there is no parent, and a disabled button never delivers its click. */
           onClick={() => { if (listing?.parent !== undefined) setCurrent(listing.parent) }}
         >
           ↑

@@ -314,6 +314,9 @@ export function apply(ctx: Context, config?: Config): void {
       }
       const promise = run()
       skillInFlight.set(cacheKey, promise)
+      // The identity test guards a REPLACED entry, which cannot happen: a second
+      // take of the same key joins this promise instead of starting.
+      /* v8 ignore next -- the map still holds this promise when it settles */
       void promise.then(
         () => { if (skillInFlight.get(cacheKey) === promise) skillInFlight.delete(cacheKey) },
         () => { if (skillInFlight.get(cacheKey) === promise) skillInFlight.delete(cacheKey) },
@@ -356,6 +359,7 @@ export function apply(ctx: Context, config?: Config): void {
       }
       const promise = run()
       chatInFlight.set(cacheKey, promise)
+      /* v8 ignore next -- the map still holds this promise when it settles */
       void promise.then(
         () => { if (chatInFlight.get(cacheKey) === promise) chatInFlight.delete(cacheKey) },
         () => { if (chatInFlight.get(cacheKey) === promise) chatInFlight.delete(cacheKey) },
@@ -384,6 +388,7 @@ export function apply(ctx: Context, config?: Config): void {
       }
       const promise = run()
       pluginInFlight = promise
+      /* v8 ignore next -- the slot still holds this promise when it settles */
       void promise.then(
         () => { if (pluginInFlight === promise) pluginInFlight = undefined },
         () => { if (pluginInFlight === promise) pluginInFlight = undefined },

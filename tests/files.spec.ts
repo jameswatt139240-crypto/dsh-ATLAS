@@ -3,6 +3,7 @@
  * symlink exclusion, deterministic paths, and cancellation.
  */
 import type { Dir, Dirent } from 'node:fs'
+import { spawnSync } from 'node:child_process'
 import { mkdtemp, mkdir, opendir, symlink, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -500,6 +501,22 @@ describe('readDirectory', () => {
       await rm(root, { recursive: true, force: true })
     }
   })
+
+  it('reports a file link as the file it points at', async (context) => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-atlas-listfilelink-'))
+    try {
+      await writeFile(join(root, 'real.txt'), 'x\n')
+      try {
+        await symlink(join(root, 'real.txt'), join(root, 'linked.txt'), 'file')
+      } catch {
+        return context.skip()
+      }
+      const { entries } = await readDirectory(root, 20)
+      expect(entries.find(entry => entry.name === 'linked.txt')).toEqual({ name: 'linked.txt', kind: 'file' })
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('a directory handle that fails mid-listing', () => {
@@ -771,6 +788,24 @@ describe('hasSubdirectory', () => {
       expect(String(warn.mock.calls[0]?.[0])).toContain('/nowhere')
     } finally {
       warn.mockRestore()
+    }
+  })
+})
+
+describe('a child that is neither a file nor a directory', () => {
+  it('does not pin a FIFO into the listing', async () => {
+    // A named pipe can sit in a workspace; it is not something the picker can
+    // open, so the pinned entry is refused rather than typed wrongly.
+    const root = await mkdtemp(join(tmpdir(), 'dsh-atlas-fifo-'))
+    const fifo = join(root, 'pipe')
+    const made = spawnSync('mkfifo', [fifo])
+    try {
+      if (made.status !== 0) return
+      const listing = await pinEntry(root, { entries: [], truncated: true }, 'pipe', new AbortController().signal)
+      expect(listing.entries).toEqual([])
+      expect(listing.truncated).toBe(true)
+    } finally {
+      await rm(root, { recursive: true, force: true })
     }
   })
 })
