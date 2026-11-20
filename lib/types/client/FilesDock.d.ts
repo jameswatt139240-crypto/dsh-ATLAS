@@ -1,6 +1,7 @@
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots';
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store';
 import type { AtFileSettings, ReferenceInfo } from '../contract.ts';
+import type { LineRange } from '../tokens.ts';
 import type { ReferenceLink } from './reference-links.ts';
 import type { MentionKind } from './source.ts';
 export interface AtFileSettingsSnapshot {
@@ -28,15 +29,30 @@ export interface AtFileDockInjected {
 }
 /** Approximate bytes per token for text files (the dock's cost hint). */
 export declare const BYTES_PER_TOKEN = 4;
+/**
+ * Approximate tokens per source line, used when the reference carries a line
+ * range. The Host never opens the referenced file, so the exact span size is
+ * unknowable here; this constant is what turns a line COUNT into a plausible
+ * cost. The estimate is always capped by the whole-file figure, so a range can
+ * never be quoted as heavier than the file that contains it.
+ */
+export declare const TOKENS_PER_LINE = 12;
 /** References heavier than this many tokens are flagged in the dock. */
 export declare const COST_WARN_TOKENS = 8000;
 /**
  * Approximate context cost of one reference, or undefined when there is nothing
  * to price (missing path, directory, or a file whose size is unknown).
+ *
+ * A reference with a line range is priced by its line count, not by the file's
+ * size: `@src/a.ts:12-40` asks the agent for 29 lines, and quoting the whole
+ * file's cost there made a narrow reference look like the most expensive thing
+ * in the draft. Without a range the file's size is the only fact available and
+ * is still the best answer.
  * @param info - the host-inspected facts for this reference, when available.
+ * @param lines - the inclusive line range on this reference, when it has one.
  * @returns the token estimate and whether it exceeds the warning threshold.
  */
-export declare function referenceCost(info: ReferenceInfo | undefined): {
+export declare function referenceCost(info: ReferenceInfo | undefined, lines?: LineRange): {
     readonly tokens: number;
     readonly warn: boolean;
 } | undefined;
@@ -59,6 +75,8 @@ export interface DraftMention {
     readonly relative?: string;
     /** The click action's target, for rows this build can open. */
     readonly link?: ReferenceLink;
+    /** The inclusive line range the token asked for, when it carried one. */
+    readonly lines?: LineRange;
     readonly start: number;
     readonly end: number;
 }

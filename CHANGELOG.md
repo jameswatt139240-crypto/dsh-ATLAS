@@ -1,6 +1,59 @@
 # Changelog
 
+## [1.2.0] - 2026-11-20
+
+The two lines that were being released in parallel — the history/composer line
+(`1.1.0`) and the reference-quality line (`1.0.10`–`1.0.12`) — are one release again.
+`1.1.0` was never published, so anyone on `latest` was getting `1.0.12`: line-range
+pricing and the restored first-screen definition, but not the `Esc` ladder, the
+palette, the folder picker or the plugin-registered `@` categories.
+
+### Added
+
+- **`Esc` walks the session back, one turn at a time.** The composer turns into a ladder, a
+  frame cursor shows where you stand (`第 3 / 11 轮`), and `Enter` hands that turn back for
+  reuse. One stop per turn — the same unit the GUI's own turn rail counts, so the two
+  numbers can never disagree.
+- **`Ctrl+Shift+H`** (and `Ctrl+H`) opens a searchable palette over the same history.
+- **`@` references every source**: files, folders, skills, past sessions, installed plugins,
+  workspace git changes, and any category a third-party plugin registers through `ctx.atlas`.
+  Paths outside the workspace work and carry a scope badge.
+- Folder picker is keyboard-only (arrows, Tab, paging, create folder), recent folders are
+  remembered, and `@atlas` resolves registrations from other plugins.
+
+### Fixed
+
+- **The one-sentence definition is back on the first screen**, in both languages.
+- **A line-range reference is priced by its lines, not by the file.** `@src/db.ts:88-140`
+  used to be quoted at the full weight of `db.ts`; it now costs its line count and never
+  more than the file's own figure.
+- **The palette had no surface of its own**, and nine surfaces referenced theme tokens this
+  shell does not define, so they resolved to `transparent`.
+- **The sidebar's folder fallback recursed.** A refused `openResource` fell back to
+  `openReferenceTarget`, which calls back into `openOwningFolder` for a folder — one
+  refusal was enough to recurse and log until the tab died. It now falls back to the
+  native folder opener.
+- `dsh.plugin.json` carried a different version than `package.json`; both agree.
+
+### Changed
+
+- `description` names the line ranges and the per-reference token cost.
+- Cursor users get the menu they already know (`Ctrl+Shift+H`), plus the two rows the
+  real Cursor menu does not have.
+- **The published surface is gated**: `pnpm run verify:publish` reads the tarball for
+  internal paths, sources, sourcemaps and ad inlining, and the release workflow runs it
+  next to an install-from-registry acceptance job.
+
+### Notes
+
+- Requires dsh `0.2.0-rc.2`.
+- Upgrading in place from `1.0.0` / `1.0.8` / `1.0.9` / `1.0.12` is verified: settings and
+  session files stay byte-identical, boot is clean, and rollback is one command.
+
 ## [1.1.0] - 2026-10-27
+
+The history line, cut but never published: `1.0.10`–`1.0.12` took `latest` instead.
+
 
 The first stable release of the history line. Same code as `1.0.9-port.9`, published
 under `latest` so a plain `dsh plugin add @sidequest-007/dsh-atlas` no longer hands out the
@@ -27,6 +80,58 @@ old 1.0.9 composer.
 - Requires dsh `0.2.0-rc.2`.
 - Upgrading in place from `1.0.0` / `1.0.8` / `1.0.9` is verified: settings and session files
   stay byte-identical, boot is clean, and rollback is one command.
+## [1.0.12] - 2026-10-28
+
+### Fixed
+
+- **The one-sentence definition disappeared from the first screen, again.** It was
+  added above the masthead, then a later commit about the plugin this one replaces
+  removed the same line as unrelated collateral — the diff dropped it without
+  saying so in the message. Someone arriving from a market card was back to reading
+  a studio credit and a pun before learning what the plugin does. Restored in both
+  languages, still outside the five-line masthead window the publish gate pins.
+
+## [1.0.11] - 2026-10-28
+
+### Fixed
+
+- **A line-range reference was priced as if it were the whole file.** The dock
+  computed a reference's token cost from the file's byte size, which is the only
+  fact the Host has without opening it — so `@src/db.ts:88-140` was quoted at the
+  full weight of `db.ts` and became, by a wide margin, the most expensive-looking
+  row in a draft that asked the agent for 53 lines. A range is now priced by its
+  line count, and never above the file's own figure. The estimate stays an
+  estimate: the Host still opens nothing, which is what keeps the reference a
+  marker rather than a copy of the file.
+
+### Changed
+
+- `description` now names the line ranges and the per-reference cost, which is
+  what the plugin actually adds over the built-in `@`.
+- `dsh.plugin.json` carried `1.0.9-port.9` as its version while `package.json`
+  said `1.0.10`. Both agree again.
+
+## [1.0.10] - 2026-10-28
+
+### Changed
+
+- **This is `1.0.9-port.9`, promoted to `latest`.** The four `port` builds fixed
+  real defects: a history palette that had no surface of its own (it asked for a
+  token this shell never defines, so the fallback `transparent` applied and the
+  transcript read straight through the dialog), eight more tokens with the same
+  problem — every border, rule and frame that used them had been invisible — and
+  a `lib/` that had fallen behind the sources, so one published tarball carried an
+  older client than the code it claimed to be.
+
+  All of that was reachable only through the `port` dist-tag. A plain
+  `dsh plugin add @sidequest-007/dsh-atlas`, and every market install, kept
+  handing out the 2026-09-27 build. `latest` now points here, so both paths agree.
+
+### Unchanged
+
+- No runtime changes since `1.0.9-port.9` — the same `lib/`, the same tests
+  (1040 passed, 1 skipped; 94.87% statement, 90.13% branch). This release moves
+  the version number and the dist-tag to which it publishes, nothing else.
 
 ## [1.0.9-port.9] - 2026-10-27
 

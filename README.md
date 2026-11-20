@@ -10,6 +10,8 @@ composer turns into a ladder, the right rail shows which turn you are on (`第 3
 and `Enter` hands that turn back to you for reuse. `Ctrl+Shift+H` opens a searchable
 palette over the same history.
 
+Beyond the **built-in `@`**: line ranges like `@src/a.ts:12-40`, skills, plugins and any git repo as source groups — with the approximate token cost of each reference shown before you send.
+
 A **Side Quest** project (工作室：支线任务, **Side Quest Labs**) — npm scope `@sidequest-007/*`, repository [`jameswatt139240-crypto/dsh-ATLAS`](https://github.com/jameswatt139240-crypto/dsh-ATLAS); the DSH plugin id keeps the ecosystem's unscoped `dsh-*` form.
 
 <img src="assets/diagrams/atlas-overview.svg" alt="dsh-ATLAS: one @ trigger, five built-in categories plus the bundled git category, and a category any plugin can register" width="880">
@@ -32,7 +34,7 @@ Unified `@` mentions for the DeepSeek Harness web GUI: type `@` in the composer 
 
 It extends [`dsh-at-file`](https://github.com/FSMargoo/dsh-at-file) (MIT), keeping its workspace path index, file filters, and paste protection, and adding four more categories, a category menu with shortcuts, mixed results, collapsible groups, and three model-facing query tools.
 
-> `dsh-atlas` and `dsh-at-file` both claim the composer's `@` trigger. Install **one of them**, not both.
+> **Coming from `dsh-at-file`?** Its last commit was 2026-09-01, and on current Harness it no longer starts: `ctx.settings.register` is not a function, so the plugin throws during load and its entries are dropped silently ([upstream #45](https://github.com/FSMargoo/dsh-at-file/issues/45), open since 2026-09-25; the fix has been sitting as [#47](https://github.com/FSMargoo/dsh-at-file/pull/47) since 2026-10-19). `dsh-atlas` is that same file index carried onto the current API — the workspace path index, the filters and the paste protection are all still here, with the categories above on top. Same trigger, so install one of the two.
 
 ## Install
 
@@ -46,11 +48,29 @@ dsh plugin --profile web add github:jameswatt139240-crypto/dsh-ATLAS
 git clone https://github.com/jameswatt139240-crypto/dsh-ATLAS
 dsh plugin --profile web add link:/path/to/dsh-ATLAS
 
-# npm (published; `latest` is 1.0.12 since 2026-10-28, `port` carries the ported builds)
-dsh plugin --profile web add @sidequest-007/dsh-atlas@1.0.12
+# npm (published; `latest` is 1.2.0 since 2026-11-20, `port` carries the ported builds)
+dsh plugin --profile web add @sidequest-007/dsh-atlas@1.2.0
 ```
 
 Restart `dsh web` after installing or updating so the Host and the browser client load the same version. Then type `@` in the composer.
+
+## Coming from Cursor?
+
+Cursor's `@` menu taught a lot of people to type `@file`, `@folder`, `@Chats`, `@Commit`. The DSH composer resolves `@path` and `@label` on its own. This plugin widens that menu to the shape you already expect, and adds the two things Cursor does not do:
+
+| | Cursor | DSH built-in | dsh-ATLAS |
+|---|:---:|:---:|:---:|
+| `@file` | yes | yes | yes |
+| `@folder`, with `/` to descend | yes | yes | yes |
+| previous conversations | `@Chats` | `@label` | yes |
+| git diff | `@Commit` / `@Branch` | — | `@git` |
+| a skill as a source | via `/` | — | yes |
+| a plugin as a source | — | — | yes |
+| **line range** `@src/a.ts:12-40` | — | — | **yes** |
+| **token cost, before you send** | — | — | **yes** |
+| `@Terminals`, `@Browser` | yes | — | — |
+
+The last two rows are the argument. In an editor, attaching `@db.ts` to reach one function drags the whole file into the window, and you find out what it cost once the window is already full. Here you write `@src/db.ts:88-140`, the dock prices it at `~348 tokens`, and it stays 348 — `TOKENS_PER_LINE = 12`, capped by the whole-file estimate, so an over-long range can never look cheaper than the file itself.
 
 ## The categories
 
@@ -318,6 +338,12 @@ pnpm run verify:publish  # publish-surface gate on its own
   needs the DSH source checkout, which CI does not have). To publish by hand instead,
   run `npm publish --registry https://registry.npmjs.org` (a mirror such as
   `registry.npmmirror.com` cannot accept a publish).
+
+## If this replaced something you were using
+
+`dsh-at-file` stopped loading on Harness 0.2.x, and this carried its file index onto the current API. If that is why you are here, one thing helps more than a bug report: **a star**. The plugin markets sort by it, and a project sitting at zero reads as abandoned whether or not it is — a poor first impression for a plugin whose entire job is to be dependable about paths.
+
+→ [Star the repo](https://github.com/jameswatt139240-crypto/dsh-ATLAS) · [Report a bug](https://github.com/jameswatt139240-crypto/dsh-ATLAS/issues)
 
 ## Compatibility
 

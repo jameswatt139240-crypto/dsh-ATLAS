@@ -7,6 +7,8 @@
 **一个 `@` 跳到任何来源；一个 `Esc` 把整段会话倒着走，一轮一格。**
 输入 `@` 引用任何来源；按 `Esc` 站进自己的历史：输入框变成一把阶梯，右侧帧游标显示你正停在哪一轮（`第 3 / 11 轮`），回车把这一轮的内容交回给你复用。`Ctrl+Shift+H` 打开可搜索的历史调色板。
 
+在**内置 `@`** 之上：行区间如 `@src/a.ts:12-40`、Skill、插件与任意 git 仓库作为可选来源，并在发送前显示每条引用要花多少 token。
+
 本项目属于 **Side Quest（支线任务）** 工作室（**Side Quest Labs**）—— npm 范围 `@sidequest-007/*`，仓库 [`jameswatt139240-crypto/dsh-ATLAS`](https://github.com/jameswatt139240-crypto/dsh-ATLAS)；**DSH 插件 id 沿用生态惯例的无 scope 形式 `dsh-*`**。
 
 <img src="assets/diagrams/atlas-overview.svg" alt="dsh-ATLAS：一个 @ 触发位、五个内置类别加内置的 git 类别，以及任何插件都能注册的自己的类别" width="880">
@@ -29,7 +31,7 @@ DeepSeek Harness Web 界面的**统一 `@` 提及**插件：在输入框输入 `
 
 它基于 [`dsh-at-file`](https://github.com/FSMargoo/dsh-at-file)（MIT）扩展而来：保留原有的工作区路径索引、文件过滤规则与粘贴保护，并新增四个类别、类别菜单与快捷键、混合结果、分组折叠，以及三个模型侧查询工具。
 
-> `dsh-atlas` 与 `dsh-at-file` 都占用输入框的 `@` 触发位。请**二选一**，不要同时安装。
+> **从 `dsh-at-file` 过来？** 它最后一次提交是 2026-09-01，在当前的 Harness 上已经起不来：`ctx.settings.register` 不再是函数，插件加载时即抛错、条目被静默丢弃（[上游 #45](https://github.com/FSMargoo/dsh-at-file/issues/45)，2026-09-25 至今未关；修复 PR [#47](https://github.com/FSMargoo/dsh-at-file/pull/47) 从 2026-10-19 躺到现在）。`dsh-atlas` 就是同一套文件索引搬到当前 API 上——工作区路径索引、过滤规则、粘贴保护都还在，再加上前面那些类别。二者占用同一个触发位，装一个。
 
 ## 安装
 
@@ -43,11 +45,29 @@ dsh plugin --profile web add github:jameswatt139240-crypto/dsh-ATLAS
 git clone https://github.com/jameswatt139240-crypto/dsh-ATLAS
 dsh plugin --profile web add link:/path/to/dsh-ATLAS
 
-# npm 包（已发布；`latest` 自 2026-10-28 起是 1.0.12，`port` 是移植版使用的 tag）
-dsh plugin --profile web add @sidequest-007/dsh-atlas@1.0.12
+# npm 包（已发布；`latest` 自 2026-11-20 起是 1.2.0，`port` 是移植版使用的 tag）
+dsh plugin --profile web add @sidequest-007/dsh-atlas@1.2.0
 ```
 
 安装或更新后**重启 `dsh web`**，确保 Host 与浏览器客户端都加载同一版本。然后在输入框打 `@`。
+
+## 如果你用过 Cursor
+
+Cursor 的 `@` 菜单把 `@file`、`@folder`、`@Chats`、`@Commit` 这套手感教给了很多人。DSH 输入框自己就能解析 `@路径` 和 `@会话标签`。这个插件把菜单扩成你已经习惯的形状，并补上 Cursor 没做的两件事：
+
+| | Cursor | DSH 内置 | dsh-ATLAS |
+|---|:---:|:---:|:---:|
+| `@文件` | 有 | 有 | 有 |
+| `@文件夹`，打 `/` 继续下钻 | 有 | 有 | 有 |
+| 过往会话 | `@Chats` | `@标签` | 有 |
+| git diff | `@Commit` / `@Branch` | — | `@git` |
+| 把 Skill 当来源 | 走 `/` | — | 有 |
+| 把插件当来源 | — | — | 有 |
+| **行区间** `@src/a.ts:12-40` | — | — | **有** |
+| **发送前看到 token 成本** | — | — | **有** |
+| `@Terminals`、`@Browser` | 有 | — | — |
+
+后两行才是重点。在编辑器里为了一个函数 `@db.ts`，整个文件都被拖进窗口，等窗口塞满才知道它值多少钱。这里你写 `@src/db.ts:88-140`，dock 上标 `≈348 tokens`，而且它就一直是 348 —— `TOKENS_PER_LINE = 12`，并以整文件估算封顶，所以再长的区间也不会显得比整个文件还便宜。
 
 ## 类别
 
@@ -307,6 +327,12 @@ pnpm run verify:publish  # 单独运行发布面门禁
   是交互式发布的。该 job 还会在"该版本已在 npm 上"时自动跳过，并以 `--ignore-scripts` 发布（完整梯子依赖
   DSH 源码检出，CI 里没有）。若要手动发布：`npm publish --registry https://registry.npmjs.org`
   （镜像如 `registry.npmmirror.com` 不能接收发布）。
+
+## 如果它替代了你原本在用的东西
+
+`dsh-at-file` 在 Harness 0.2.x 上已经加载不起来了，这个插件把它的文件索引接到了当前 API 上。如果你是因为这个来的，有一件事比提 issue 更有用：**一个 star**。插件市场的排序看它，而一个 0 star 的项目在别人眼里就是「没人维护」——不管它实际上有没有，这对一个主打「路径靠谱」的插件来说是很糟的第一印象。
+
+→ [给个 star](https://github.com/jameswatt139240-crypto/dsh-ATLAS) · [报个 bug](https://github.com/jameswatt139240-crypto/dsh-ATLAS/issues)
 
 ## 兼容性
 
