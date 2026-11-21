@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.6] - 2026-11-21
+
+### Added
+
+- **A folder named in the draft is searched by a plain `@`.** Writing `@folder:/home/ubuntu/Downloads/` (or dropping an absolute folder mention) used to narrow only `@file:`; a later `@Fable` still scanned the workspace alone, so a file sitting in that folder could not be reached without spelling the category. The mixed search now also lists the folder the draft points at, files and sub-folders alike, tagged `工作区外 · <dir>`. A scope inside the workspace is left to the index, and a folder that cannot be listed contributes nothing.
+
 ## [1.2.5] - 2026-11-21
 
 ### Fixed

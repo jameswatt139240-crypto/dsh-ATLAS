@@ -1308,6 +1308,70 @@ export function createMentionSource(deps: MentionSourceDeps): MentionSource {
     return { rows, label: basenameOf(path) }
   }
 
+  /**
+   * The draft-scoped folder's entries that match a mixed query, sub-folders included.
+   *
+   * `@folder:<outside path>` earlier in the draft is a fact about the composition, not
+   * about the workspace: the user has said "I am working in this folder", so a later
+   * `@` has to reach its files WITHOUT spelling the category (`@file:`). Reported as
+   * "前面输入工作区之外的文件夹，后面 @ 也要能找到里面的文件或子文件夹".
+   * {@link scopeFileRows} answers the `@file:` view with files only, so this is the
+   * same listing with the folder rows kept.
+   * @param sessionId - the session whose draft is scoped.
+   * @param query - the live query; empty means the whole folder.
+   * @param signal - caller lifetime.
+   * @returns the matching rows, or none when the draft names no outside folder.
+   */
+  const scopeRowsForQuery = async (
+    sessionId: SessionId,
+    query: string,
+    signal: AbortSignal,
+  ): Promise<readonly MentionCandidate[]> => {
+    const read = deps.scopeFolder
+    if (read === undefined) return []
+    let scopePath: string | undefined
+    try {
+      scopePath = await read(sessionId, signal)
+    } catch (error) {
+      if (!isCancellation(error, signal)) console.warn('[dsh-atlas] draft scope lookup failed:', error)
+      return []
+    }
+    if (scopePath === undefined || scopePath.trim() === '') return []
+    const path = scopePath.replace(/[/\\]+$/u, '')
+    // A workspace folder is already in the index; listing it again would show the
+    // same file twice and spend the budget on it twice.
+    if (path === '' || insideWorkspace(sessionId, path)) return []
+    let listing: DirectoryListing
+    try {
+      listing = await fetchScopeListing(sessionId, path, signal)
+    } catch (error) {
+      if (!isCancellation(error, signal)) console.warn('[dsh-atlas] scoped folder listing failed:', error)
+      return []
+    }
+    if (listing.error !== undefined) return []
+    const needle = query.trim().toLowerCase()
+    const outside = t?.('folder.outside') ?? '工作区外'
+    return listing.entries
+      .filter(entry => needle === '' || entry.name.toLowerCase().includes(needle))
+      .map(entry => (entry.kind === 'dir'
+        ? {
+            name: `${entry.name}/`,
+            icon: menuIconKind('folder'),
+            value: `${childOf(listing.path, entry.name)}/`,
+            atFileKind: 'dir' as const,
+            mentionKind: 'dir' as const,
+            description: `${outside} · ${path}`,
+          }
+        : {
+            name: entry.name,
+            icon: menuIconKind('file'),
+            value: childOf(listing.path, entry.name),
+            atFileKind: 'file' as const,
+            mentionKind: 'file' as const,
+            description: `${outside} · ${path}`,
+          }))
+  }
+
   const fetchSkills = (sessionId: SessionId, signal?: AbortSignal): Promise<readonly SkillCandidate[]> =>
     deps.listSkills === undefined
       ? Promise.resolve([])
@@ -2058,8 +2122,15 @@ export function createMentionSource(deps: MentionSourceDeps): MentionSource {
         }
         const externalMatches = externalFolderRows(session.sessionId)
           .filter(row => matches(query, row.name))
+        // The folder the draft itself points at answers here too, so `@<outside dir>/`
+        // followed by a plain `@` reaches that folder's files and sub-folders.
+        // The helper swallows its own failures (a scope is a hint, never a reason to
+        // empty the menu), so there is nothing to catch here.
+        const scopeMatches = await scopeRowsForQuery(session.sessionId, query, signal)
+        if (signal.aborted) return []
         const relevance = [
           ...externalMatches.slice(0, 4),
+          ...scopeMatches.slice(0, 6),
           ...candidateRows(rankFilesWithFuzzy(relevantFiles, query, 8), 'both', true, t),
           ...skillRows(skills, query, 3, key => isCollapsed(session.sessionId, key), t, true, true),
           ...chatRows(chats, 2, now(), key => isCollapsed(session.sessionId, key), t, true),

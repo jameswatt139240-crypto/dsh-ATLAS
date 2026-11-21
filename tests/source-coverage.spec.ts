@@ -1069,6 +1069,115 @@ const scopeHarness = (extra: Partial<Parameters<typeof createMentionSource>[0]> 
   return { ...h, external }
 }
 
+describe('the folder the draft points at, searched by a plain @', () => {
+  const entries = [
+    { name: 'Fable5.2-Godot-四个工程.zip', kind: 'file' as const },
+    { name: 'godot-src', kind: 'dir' as const },
+    { name: 'notes.txt', kind: 'file' as const },
+  ]
+
+  it('finds the file a draft-scoped folder holds, without the file: category', async () => {
+    const h = harness({
+      extra: {
+        scopeFolder: async () => '/home/ubuntu/Downloads/',
+        list: async () => ({ path: '/home/ubuntu/Downloads', entries }),
+      },
+    })
+    const rows = await h.ask('Fable')
+    expect(rows.some(row => row.name === 'Fable5.2-Godot-四个工程.zip')).toBe(true)
+    expect(rows.find(row => row.name === 'Fable5.2-Godot-四个工程.zip')?.value)
+      .toBe('/home/ubuntu/Downloads/Fable5.2-Godot-四个工程.zip')
+  })
+
+  it('finds a sub-folder of it too, and marks it as a folder', async () => {
+    const h = harness({
+      extra: {
+        scopeFolder: async () => '/home/ubuntu/Downloads/',
+        list: async () => ({ path: '/home/ubuntu/Downloads', entries }),
+      },
+    })
+    const rows = await h.ask('godot')
+    const row = rows.find(candidate => candidate.name === 'godot-src/')
+    expect(row?.mentionKind).toBe('dir')
+    expect(row?.value).toBe('/home/ubuntu/Downloads/godot-src/')
+  })
+
+  it('leaves a scope inside the workspace to the index, without listing it twice', async () => {
+    const list = vi.fn(async () => ({ path: '/ws/src', entries }))
+    const h = harness({ extra: { scopeFolder: async () => '/ws/src', list } })
+    await h.ask('Fable')
+    expect(list).not.toHaveBeenCalled()
+  })
+
+  it('names a scope lookup that failed for a reason other than cancellation', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const h = harness({
+      extra: { scopeFolder: async () => { throw new Error('no draft') } },
+    })
+    await h.ask('Fable')
+    expect(warn).toHaveBeenCalledWith('[dsh-atlas] draft scope lookup failed:', expect.any(Error))
+    warn.mockRestore()
+  })
+
+  it('names a listing that failed for a reason other than cancellation', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const h = harness({
+      extra: {
+        scopeFolder: async () => '/outside/gone',
+        list: async () => { throw new Error('disk gone') },
+      },
+    })
+    await h.ask('Fable')
+    expect(warn).toHaveBeenCalledWith('[dsh-atlas] scoped folder listing failed:', expect.any(Error))
+    warn.mockRestore()
+  })
+
+  it('says nothing when the mixed view is what the aborted lookup belonged to', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const aborted = harness({
+      extra: { scopeFolder: async () => { throw Object.assign(new Error('cancelled'), { name: 'AbortError' }) } },
+    })
+    await aborted.ask('Fable')
+    const listed = harness({
+      extra: {
+        scopeFolder: async () => '/outside/gone',
+        list: async () => { throw Object.assign(new Error('cancelled'), { name: 'AbortError' }) },
+      },
+    })
+    await listed.ask('Fable')
+    expect(warn).not.toHaveBeenCalled()
+    warn.mockRestore()
+  })
+
+  it('drops the mixed view when the caller aborts while the folder is listed', async () => {
+    const caller = new AbortController()
+    const h = harness({
+      extra: {
+        scopeFolder: async () => '/home/ubuntu/Downloads',
+        list: async () => {
+          caller.abort()
+          return { path: '/home/ubuntu/Downloads', entries: [{ name: 'Fable.zip', kind: 'file' as const }] }
+        },
+      },
+    })
+    expect(await h.ask('Fable', 's1', caller.signal)).toEqual([])
+  })
+
+  it('contributes nothing when the folder cannot be listed', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const h = harness({
+      extra: {
+        scopeFolder: async () => '/outside/gone',
+        list: async () => ({ path: '/outside/gone', entries: [], error: 'outside' }),
+      },
+    })
+    const rows = await h.ask('Fable')
+    expect(rows.some(row => row.name.includes('Fable'))).toBe(false)
+    expect(warn).not.toHaveBeenCalled()
+    warn.mockRestore()
+  })
+})
+
 describe('the out-of-workspace folder scope', () => {
   it('answers the FIRST query from a cold scope instead of nothing', async () => {
     const { ask, external } = scopeHarness()
