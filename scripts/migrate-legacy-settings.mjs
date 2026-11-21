@@ -45,6 +45,10 @@ if (section === undefined || section === null || typeof section !== 'object') {
 }
 
 const settings = existing?.settings ?? {}
+// Data only. A switch copied out of a profile that no longer reads it is a trap:
+// `enabled: false` makes every host method refuse, and the composer simply looks
+// like it has no plugin, so the migrated document starts switched on.
+if (existing === undefined) settings.enabled = true
 for (const field of LEDGER_FIELDS) {
   const mine = settings[field]
   const theirs = section[field]

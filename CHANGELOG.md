@@ -1,6 +1,21 @@
 # Changelog
 
-## [1.2.1] - 2026-11-21
+## [1.2.2] - 2026-11-21
+
+`1.2.1` was cut but never published, so this release carries it too: the marks,
+the settings document and the folder ledger are one version again.
+
+### Fixed
+
+- **A settings document that says `enabled: false` is no longer silent.** Releases
+  since DSH `0.2.2` keep `at-file` in `<harness home>/atlas/at-file.json`; when that
+  document arrives switched off (a migrated profile, a hand edit), every host method
+  refuses and the composer merely shows nothing — indistinguishable from "the plugin
+  does nothing". The plugin now names the file and the switch once at load.
+- `scripts/migrate-legacy-settings.mjs` copies data only: a fresh target starts with
+  `enabled: true` instead of inheriting a switch from a profile that no longer reads it.
+
+## [1.2.1 (unpublished)] - 2026-11-21
 
 The out-of-workspace folder you pick shows up in the very next `@` query, and the
 plugin now has a brand mark of its own instead of the panel's default artwork.

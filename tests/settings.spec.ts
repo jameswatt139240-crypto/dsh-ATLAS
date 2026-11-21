@@ -3,7 +3,7 @@
  * and the defaults-only fallback that keeps a profile without a namespace API
  * serving switches instead of taking the plugin down.
  */
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -65,6 +65,19 @@ describe('registerAtFileSettings', () => {
 
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('has no namespace API'))
     expect(warn).toHaveBeenCalledWith(expect.stringContaining(AT_FILE_NAMESPACE))
+    warn.mockRestore()
+  })
+
+  it('names the file and the switch when the document arrives switched off', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    mkdirSync(join(home, 'atlas'), { recursive: true })
+    const file = join(home, 'atlas', 'at-file.json')
+    writeFileSync(file, JSON.stringify({ version: 1, settings: { enabled: false } }))
+
+    const scope = registerAtFileSettings(bareContext())
+
+    expect(scope.get().enabled).toBe(false)
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining(`switched OFF in ${file}`))
     warn.mockRestore()
   })
 

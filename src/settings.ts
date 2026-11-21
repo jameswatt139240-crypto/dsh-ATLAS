@@ -140,7 +140,15 @@ export function registerAtFileSettings(ctx: Context): AtFileSettingsScope {
   if (typeof registrar.register !== 'function') {
     const store = createDurableSettings(ctx)
     console.warn(`[dsh-atlas] this profile's settings service has no namespace API; "${AT_FILE_NAMESPACE}" is kept in ${store.file}`)
-    return durableScope(store)
+    const scope = durableScope(store)
+    // A document carried over from an older profile can say `enabled: false`, and
+    // then every host method refuses while the client simply shows nothing — the
+    // one failure mode that looks exactly like "this plugin does nothing". Say it
+    // once at load, with the file to edit, instead of leaving it silent.
+    if (!scope.get().enabled) {
+      console.warn(`[dsh-atlas] "${AT_FILE_NAMESPACE}" is switched OFF in ${store.file}; the "@" categories, history jump and folder picker stay idle until it is turned back on`)
+    }
+    return scope
   }
   return registrar.register<AtFileSettings>(AT_FILE_NAMESPACE, AtFileSettingsSchema, { applies: 'live' })
 }
