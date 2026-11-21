@@ -72,6 +72,33 @@ Cursor's `@` menu taught a lot of people to type `@file`, `@folder`, `@Chats`, `
 | **token cost, before you send** | — | — | **yes** |
 | `@Terminals`, `@Browser` | yes | — | — |
 
+### The two rows we do not have
+
+`@Terminals` is not a gap, it is a different shape of tool. DSH *is* the runtime
+that runs your commands: `bash`, `bash-persistent`, `terminal` and `pwsh` are
+built in, `jobs` carries background output, and the session log keeps every tool
+call and its result — searchable, replayable. "run the tests, read the error, fix
+it, run them again" is already a closed loop, and minimal mode is nothing but the
+terminal tools. Making you paste terminal output back in by hand would be a step
+backwards.
+
+`@Browser` is a real gap. Cursor's Browser is a controlled graphical browser:
+navigate, click, fill, scroll, screenshot, read the console and the network, with
+login state per workspace. DSH's web domain today is `web_search` and `web_fetch`
+— reading pages, HTML to Markdown — with no driven browser instance and no
+cookie/localStorage session. Out of the box there is no `@Browser` equivalent.
+
+The road is open, though, and wider than Cursor's: everything here is a plugin
+(MCP client, ACP, the guard/sandbox approval layer), so pointing an MCP server for
+Playwright or raw CDP at the harness — or writing a small `dsh-plugin` — fills the
+gap. On the model side, DeepSeek is multimodal with image input and a 1M context
+from V4.1 Flash on, and DSH ships `attachment` and `context` packages, so a
+screenshot can flow back as an image. The cost is real: you install or write the
+plugin, set the approval allowlist, and own the login state. DSH is still a
+developer preview, so CLI and API may change without compatibility; and it is not
+bound to DeepSeek — point it at any of ~40 providers, and a text-only model turns
+visual UI work into reading DOM text.
+
 The last two rows are the argument. In an editor, attaching `@db.ts` to reach one function drags the whole file into the window, and you find out what it cost once the window is already full. Here you write `@src/db.ts:88-140`, the dock prices it at `~348 tokens`, and it stays 348 — `TOKENS_PER_LINE = 12`, capped by the whole-file estimate, so an over-long range can never look cheaper than the file itself.
 
 ## The categories

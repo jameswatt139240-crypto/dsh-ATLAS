@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.2.4] - 2026-11-21
+
+### Added
+
+- **The two rows this plugin does not have, written down.** The Cursor comparison
+  table has said `@Terminals` / `@Browser` are `—` for three releases without saying
+  why. It now does: DSH is the runtime that runs your commands (`bash`,
+  `bash-persistent`, `terminal`, `pwsh`, `jobs`, plus a session log that keeps every
+  tool call and its result), so asking the user to paste terminal output back in
+  would be a step backwards; and the web domain today is `web_search` + `web_fetch`
+  — reading pages, not driving a browser — so an `@Browser` equivalent has to come
+  from a plugin (an MCP server for Playwright or raw CDP), with the model side
+  already able to take a screenshot as an image.
+
 ## [1.2.3] - 2026-11-21
 
 ### Fixed

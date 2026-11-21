@@ -69,6 +69,14 @@ Cursor 的 `@` 菜单把 `@file`、`@folder`、`@Chats`、`@Commit` 这套手感
 | **发送前看到 token 成本** | — | — | **有** |
 | `@Terminals`、`@Browser` | 有 | — | — |
 
+### 我们没有的那两行
+
+`@Terminals` 不是缺口，是另一种工具形状。DSH 本身就是跑命令、读输出的运行时：`bash`、`bash-persistent`、`terminal`、`pwsh` 都是内置工具，`jobs` 管后台任务输出，会话日志把每次工具调用和返回结果都留痕——可检索、可回放；极简模式甚至只剩终端工具。「跑测试 → 看报错 → 改 → 再跑」本来就是一个闭环，再让用户手动 `@` 一下把终端输出挂进来，反而是倒退。
+
+`@Browser` 是真的缺口。Cursor 的 Browser 是可控的图形浏览器：导航、点击、填表、滚动、截图，还能读 Console 和网络请求，登录态按工作区持久化。DSH 的 web 域目前只有 `web_search` / `web_fetch`——抓网页、HTML 转 Markdown，属于读网页而不是操作网页，既没有受控浏览器实例，也没有 Cookie/localStorage 会话。所以严格说：现在开箱即用不了 `@Browser` 的等价物。
+
+但路是通的，而且比 Cursor 更自由：一切皆插件（MCP 客户端、ACP、guard/sandbox 审批层），挂一个 Playwright / CDP 类 MCP server，或者写个 `dsh-plugin`，就能补上浏览器工具；模型侧从 V4.1 Flash 起原生多模态、支持图片输入与 1M 上下文，DSH 又有 `attachment` / `context` 子包，截图作为图像回灌给模型这条路是成立的。代价也实在：插件得自己装或写、审批白名单要自己配、登录态要自己管；DSH 仍是开发者预览版，CLI/API 可能不兼容变更；而且它不绑定 DeepSeek 模型（可接约 40 家 provider），一旦换成纯文本模型，视觉调 UI 就退化成只能读 DOM 文本。
+
 后两行才是重点。在编辑器里为了一个函数 `@db.ts`，整个文件都被拖进窗口，等窗口塞满才知道它值多少钱。这里你写 `@src/db.ts:88-140`，dock 上标 `≈348 tokens`，而且它就一直是 348 —— `TOKENS_PER_LINE = 12`，并以整文件估算封顶，所以再长的区间也不会显得比整个文件还便宜。
 
 ## 类别
