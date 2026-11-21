@@ -9,6 +9,7 @@ import z from '@deepseek-ai/schemastery'
 import type { AtFileSettings, ExternalRef, UsageEntry, WorkspaceRecentFiles } from './contract.ts'
 import type { FileIgnoreRule } from './contract.ts'
 import { DEFAULT_IGNORE_FILES } from './defaults.ts'
+import { createDurableSettings, type DurableSettings } from './store.ts'
 
 /** The branded namespace name (the Web allowlist must list the same string). */
 export const AT_FILE_NAMESPACE = 'at-file'
@@ -107,19 +108,24 @@ interface NamespaceRegistrar {
 }
 
 /**
- * A scope over the schema's defaults, used when the service offers no namespace
- * API. Nothing is persisted, but the switches, filters and history knobs still
- * answer for the life of the session instead of taking the plugin down.
- * @returns a scope whose value starts at the schema defaults.
+ * A scope over this plugin's own document, used when the service offers no
+ * namespace API. The value starts at the schema defaults and every update is
+ * written to the harness home, so switches, filters, history knobs and the
+ * out-of-workspace ledger survive a restart instead of living only in memory.
+ * @param store - the document this profile keeps its section in.
+ * @returns a scope backed by that document.
  */
-function defaultScope(): AtFileSettingsScope {
-  // Resolving the schema with an empty section is exactly what the settings
-  // provider does on first read: every field falls back to its declared default.
-  let current = AtFileSettingsSchema({} as AtFileSettings)
+function durableScope(store: DurableSettings): AtFileSettingsScope {
+  let current: AtFileSettings | undefined
+  const value = (): AtFileSettings => (current ??= store.load())
   return {
-    get: () => current,
+    get: value,
     update: async (patch) => {
-      current = { ...current, ...patch }
+      // Re-validate the merge: a patch from the wire must not smuggle a field the
+      // schema would reject, and the defaults stay applied to anything absent.
+      const next = AtFileSettingsSchema({ ...value(), ...patch } as AtFileSettings)
+      current = next
+      await store.save(next)
     },
   }
 }
@@ -132,8 +138,9 @@ function defaultScope(): AtFileSettingsScope {
 export function registerAtFileSettings(ctx: Context): AtFileSettingsScope {
   const registrar = ctx.settings as unknown as NamespaceRegistrar
   if (typeof registrar.register !== 'function') {
-    console.warn(`[dsh-atlas] this profile's settings service has no namespace API; "${AT_FILE_NAMESPACE}" runs on defaults`)
-    return defaultScope()
+    const store = createDurableSettings(ctx)
+    console.warn(`[dsh-atlas] this profile's settings service has no namespace API; "${AT_FILE_NAMESPACE}" is kept in ${store.file}`)
+    return durableScope(store)
   }
   return registrar.register<AtFileSettings>(AT_FILE_NAMESPACE, AtFileSettingsSchema, { applies: 'live' })
 }

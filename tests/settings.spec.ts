@@ -3,7 +3,10 @@
  * and the defaults-only fallback that keeps a profile without a namespace API
  * serving switches instead of taking the plugin down.
  */
-import { describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import {
   AT_FILE_NAMESPACE,
@@ -21,6 +24,22 @@ function registeringService() {
 
 /** The shape a profile without the namespace API hands the plugin. */
 const bareService = {}
+
+/** A throwaway harness home, so the fallback never reads the developer's own. */
+let home = ''
+
+beforeEach(() => {
+  home = mkdtempSync(join(tmpdir(), 'atlas-settings-'))
+})
+
+afterEach(() => {
+  rmSync(home, { recursive: true, force: true })
+})
+
+/** The context a profile without the namespace API hands the plugin. */
+function bareContext(): Context {
+  return { profileContext: { home }, settings: bareService } as unknown as Context
+}
 
 describe('registerAtFileSettings', () => {
   it('registers the namespace with the schema and asks for live application', () => {
@@ -42,7 +61,7 @@ describe('registerAtFileSettings', () => {
   it('falls back to the schema defaults, loudly, when the service offers no namespace API', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
-    const scope = registerAtFileSettings({ settings: bareService } as unknown as Context)
+    const scope = registerAtFileSettings(bareContext())
 
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('has no namespace API'))
     expect(warn).toHaveBeenCalledWith(expect.stringContaining(AT_FILE_NAMESPACE))
@@ -51,7 +70,7 @@ describe('registerAtFileSettings', () => {
 
   it('keeps the fallback scope live in memory, so a toggle still answers', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    const scope = registerAtFileSettings({ settings: bareService } as unknown as Context)
+    const scope = registerAtFileSettings(bareContext())
     warn.mockRestore()
 
     // The contract default is the turn-grained ladder (A-33); the fallback must

@@ -367,4 +367,13 @@ describe('reference cost helpers', () => {
     // The warning threshold applies to the range estimate too.
     expect(referenceCost(file, { start: 1, end: 5_000 })).toEqual({ tokens: 60_000, warn: true })
   })
+
+  it('says nothing about a file whose size the Host did not report', () => {
+    // A Host that answered `exists`/`kind` but no `size` has no whole-file figure
+    // to price with; without a range there is nothing honest to show.
+    expect(referenceCost({ relative: 'u.ts', exists: true, kind: 'file' })).toBeUndefined()
+    // With a range the line count alone answers, and nothing caps it.
+    expect(referenceCost({ relative: 'u.ts', exists: true, kind: 'file' }, { start: 1, end: 10 }))
+      .toEqual({ tokens: 120, warn: false })
+  })
 })

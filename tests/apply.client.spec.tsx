@@ -1767,10 +1767,63 @@ describe('dsh-atlas folder escape hatches', () => {
     const call = bail.mock.calls.at(-1) as unknown as [unknown, string, { text: string }]
     expect(call[2].text).toBe('@/picked/folder/ ')
 
+    // The pick is also the moment the folder enters the ledger the Host's scope
+    // reads: recording it only at `agent/pre-step` left a folder the user had
+    // just chosen invisible to `@` until a message carrying it was sent.
+    const recorded = booted.updateSettings.mock.calls
+      .map(call => call[0] as { field: string; value: unknown })
+      .filter(update => update.field === 'externalRefs')
+    expect(recorded).toHaveLength(1)
+    expect((recorded[0].value as readonly { path: string; kind: string }[])[0])
+      .toMatchObject({ path: '/picked/folder', kind: 'dir' })
+
+    // A chooser that answers the filesystem root still drafts the reference, but
+    // there is no directory to record: the root is not an out-of-workspace folder.
+    const root = await boot({ uiWorkspace: { pickDirectory: async () => '/', createDirectory: async () => '' } })
+    registered(root).onPick?.({ candidate: folderRow, session, action: 'accept', span: { start: 0, end: 2 } })
+    await settle()
+    const rootCall = root.sessionBail.mock.calls.at(-1) as unknown as [unknown, string, { text: string }]
+    expect(rootCall[2].text).toBe('@/ ')
+    expect(root.updateSettings.mock.calls.every(call => (call[0] as { field: string }).field !== 'externalRefs')).toBe(true)
+
     // No chooser at all: this plugin's own dialog opens over the same backend.
     const bare = await boot({ uiWorkspace: { createDirectory: async () => '' } })
     expect(registered(bare).onPick?.({ candidate: folderRow, session, action: 'accept', span: { start: 0, end: 2 } })).toBeUndefined()
     expect(registered(bare).name).toBe(SOURCE_NAME)
+  })
+})
+
+describe('the folder a pick puts into the ledger', () => {
+  it('records the out-of-workspace folder and drops the settled scope', async () => {
+    const external = vi.fn(async () => ({
+      ok: true as const,
+      value: { canDiscover: true, roots: ['/home/ubuntu/Eason/DSH-Atlas'], folders: ['/home/ubuntu/Eason/DSH-Atlas'] },
+    }))
+    const booted = await boot({ atFileExternal: external })
+    const source = registered(booted)
+    const request = (query: string) => ({ query, position: 'leading' as const, signal: signal() })
+    // The menu sees the folder through the Host's scope, then the user picks it.
+    const rows = await source.candidates(s1, request('dsh'))
+    expect(rows.some(row => row.name === 'DSH-Atlas/')).toBe(true)
+    const calls = external.mock.calls.length
+    source.onPick?.({
+      candidate: { name: 'DSH-Atlas/', value: '/home/ubuntu/Eason/DSH-Atlas/', mentionKind: 'dir', atFileKind: 'dir' },
+      session: s1,
+      action: 'accept',
+      span: { start: 0, end: 4 },
+    })
+    await settle()
+    const recorded = booted.updateSettings.mock.calls
+      .map(call => call[0] as { field: string; value: unknown })
+      .filter(update => update.field === 'externalRefs')
+    expect(recorded).toHaveLength(1)
+    expect((recorded[0].value as readonly { path: string; workspaces?: readonly string[] }[])[0].path)
+      .toBe('/home/ubuntu/Eason/DSH-Atlas')
+    // The invalidated session fetches its scope again instead of answering the
+    // snapshot the pick just outdated.
+    const after = await source.candidates(s1, request('dsh'))
+    expect(external.mock.calls.length).toBeGreaterThan(calls)
+    expect(after.some(row => row.name === 'DSH-Atlas/')).toBe(true)
   })
 })
 

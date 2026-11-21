@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/brand/atlas-icon-128.png" alt="dsh-ATLAS — one @ for every source" width="88" height="88"></p>
+
 # dsh-ATLAS
 
 [English](README.md) · **简体中文**

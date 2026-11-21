@@ -97,6 +97,7 @@ import {
   normalizeIgnoreFiles,
   normalizeWorkspaceIgnoreFiles,
   recentFilesFor,
+  recordExternalRef,
   recordRecentFile,
   recordUsage,
   workspacePathKey,
@@ -626,6 +627,7 @@ export function apply(ctx: ClientContext): void {
     const insert = (path: string): void => {
       const text = `@${externalPath(path).replace(/[/\\]+$/u, '')}/ `
       bail.bail(actx, 'slash/input-insert-text', { text, span, continue: true })
+      rememberExternal(sessionId, path)
     }
     const openOwnDialog = (error?: unknown): void => {
       if (error !== undefined) {
@@ -662,6 +664,7 @@ export function apply(ctx: ClientContext): void {
     if (pending === null || actx === undefined) return
     const text = `@${externalPath(path).replace(/[/\\]+$/u, '')}/ `
     ;(actx as unknown as BailFace).bail(actx, 'slash/input-insert-text', { text, span: pending.span, continue: true })
+    rememberExternal(sessionId, path)
   }
 
   const inspectReferences = async (sessionId: SessionId, targets: readonly string[]): Promise<readonly ReferenceInfo[]> => {
@@ -734,6 +737,29 @@ export function apply(ctx: ClientContext): void {
   }
 
   /**
+   * Fold a folder the user just chose into the ledger the Host's scope reads.
+   *
+   * The Host records out-of-workspace references at `agent/pre-step` only, so a
+   * folder picked in the menu or in the chooser stayed outside the scope until a
+   * message carrying it was SENT — and then for up to one scope TTL longer
+   * (reported: the first `@dsh` after adding a folder showed nothing). Picking is
+   * the user saying this folder is in play, so it is recorded here, and the
+   * session's settled scope is dropped so the very next `@` already lists it.
+   * @param sessionId - the session whose composer made the pick.
+   * @param path - the absolute directory the pick referenced.
+   */
+  const rememberExternal = (sessionId: SessionId, path: string): void => {
+    const absolute = externalPath(path).replace(/[/\\]+$/u, '')
+    if (absolute === '') return
+    const current = scope.getSnapshot().value
+    void updateSettings({
+      field: 'externalRefs',
+      value: recordExternalRef(current, absolute, 'dir', sessionWorkspaceRoot(sessionId) ?? '', Date.now()),
+    })
+    mention.invalidateExternal(sessionId)
+  }
+
+  /**
    * The folder the composer's draft is currently SCOPED by (内部需求 R-05): the
    * nearest folder reference typed before the active category token, so
    * `@e:/work/docs/ @file:` lists that folder's files. The scope is positional, which
@@ -782,6 +808,7 @@ export function apply(ctx: ClientContext): void {
     onRecent,
     recentFiles,
     onUsage,
+    onExternalDir: rememberExternal,
     usage: () => scope.getSnapshot().value.usage ?? [],
     atlasProviders: () => atlasRegistry.entries(),
     // A client that activates a reference token in the composer opens it through

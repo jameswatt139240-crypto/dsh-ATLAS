@@ -1,0 +1,13 @@
+<svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="atlasMark" x1="8" y1="7" x2="29" y2="30" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8B5CF6"/>
+      <stop offset="1" stop-color="#3B82F6"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(18 18) scale(0.95) translate(-17.47 -17.98)">
+    <path d="M25.6 19.6A8.9 8.9 0 1 0 23.1 24.3" stroke="url(#atlasMark)" stroke-width="3.8" stroke-linecap="round"/>
+    <circle cx="18.1" cy="16.6" r="3.4" stroke="url(#atlasMark)" stroke-width="3.1"/>
+    <path d="M21.5 12.8V18.3C21.5 21.3 23.8 23.4 27.4 25.4" stroke="url(#atlasMark)" stroke-width="3" stroke-linecap="round"/>
+  </g>
+</svg>

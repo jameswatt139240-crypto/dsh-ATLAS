@@ -1,5 +1,34 @@
 # Changelog
 
+## [1.2.1] - 2026-11-21
+
+The out-of-workspace folder you pick shows up in the very next `@` query, and the
+plugin now has a brand mark of its own instead of the panel's default artwork.
+
+### Added
+
+- `icon.svg` (36 × 36 grid, `@` built from strokes, violet → blue) plus
+  `assets/brand/atlas-icon-{32,64,128,512}.png`; the package declares `icon`, so
+  Plugin Manager and Settings draw the same mark as the README and the social card.
+
+### Fixed
+
+- A profile whose settings service has no plugin namespace (the shape every release
+  since DSH `0.2.2` ships) kept the whole `at-file` section — switches, filters, the
+  recent-file list, the pick counters and the out-of-workspace ledger — in memory
+  only, so a restart forgot everything and the ledger stayed invisible to `@`.
+  The section now lives in `<harness home>/atlas/at-file.json`, written atomically
+  and validated through the same schema; `scripts/migrate-legacy-settings.mjs`
+  copies the rows an older `settings.yaml` still holds.
+- Picking an out-of-workspace folder (native picker, the bundled picker, or a row in
+  the `@` menu) writes it to `at-file.externalRefs` immediately and invalidates that
+  session's external scope, instead of waiting for the next send to record it. The
+  mixed `@` view also awaits a cold scope once, so the first `@dsh` of a session can
+  already list the folder. Case-insensitive matching was never the problem — `dsh`,
+  `DSH` and `dSh` all hit `DSH-Atlas/`.
+- The folder fallback after a sidebar failure opened the first-click target again,
+  recursing until the renderer ran out of heap; it falls back to the file manager.
+
 ## [1.2.0] - 2026-11-20
 
 The two lines that were being released in parallel — the history/composer line

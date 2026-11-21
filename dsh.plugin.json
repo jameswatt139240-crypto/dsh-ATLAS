@@ -1,7 +1,7 @@
 {
   "name": "@sidequest-007/dsh-atlas",
   "description": "AT Last, All Sources. One @ to jump anywhere — line ranges like @src/a.ts:12-40, the token cost of each reference before you send, and Esc to walk the session back.",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "entry": {
     "name": "@sidequest-007/dsh-atlas",
     "inject": []

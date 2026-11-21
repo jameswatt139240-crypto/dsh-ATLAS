@@ -1,7 +1,8 @@
 {
   "name": "@sidequest-007/dsh-atlas",
   "description": "AT Last, All Sources. One @ to jump anywhere — line ranges like @src/a.ts:12-40, the token cost of each reference before you send, and Esc to walk the session back.",
-  "version": "1.2.0",
+  "version": "1.2.1",
+  "icon": "icon.svg",
   "license": "MIT",
   "author": "Side Quest Labs",
   "publishConfig": {
@@ -76,12 +77,14 @@
     }
   },
   "files": [
+    "icon.svg",
     "lib/index.js",
     "lib/invariant.js",
     "lib/client.js",
     "lib/types",
     "assets/screenshots",
     "assets/diagrams",
+    "assets/brand",
     "cordis.patch.yml",
     "dsh.plugin.json",
     "README.md",

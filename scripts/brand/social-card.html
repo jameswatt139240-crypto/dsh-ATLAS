@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>dsh-ATLAS social card</title>
+<style>
+  html, body { margin: 0; width: 1280px; height: 640px; overflow: hidden; }
+  body {
+    background:
+      radial-gradient(880px 620px at 12% 8%, rgba(139, 92, 246, 0.22), transparent 62%),
+      radial-gradient(760px 560px at 88% 96%, rgba(59, 130, 246, 0.20), transparent 60%),
+      #0b0e14;
+    color: #e8edf7;
+    font-family: ui-sans-serif, system-ui, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    display: flex; align-items: center; gap: 60px; padding: 0 84px; box-sizing: border-box;
+  }
+  .mark { width: 236px; height: 236px; flex: none; filter: drop-shadow(0 18px 48px rgba(99, 102, 241, .35)); }
+  .title { font-size: 84px; font-weight: 700; letter-spacing: -2.4px; margin: 0; line-height: 1; }
+  .sub { margin: 22px 0 0; font-size: 31px; color: #a9b6cd; letter-spacing: .2px; }
+  .chips { margin-top: 30px; display: flex; flex-wrap: wrap; gap: 12px; }
+  .chip {
+    font-size: 21px; color: #cfd9ec; padding: 9px 16px; border-radius: 999px;
+    border: 1px solid rgba(148, 163, 184, .28); background: rgba(148, 163, 184, .08);
+  }
+  .foot { margin-top: 34px; display: flex; align-items: center; gap: 18px; font-size: 21px; color: #7f8ca3; }
+  .code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #bfd0ff; }
+</style>
+<img class="mark" src="../../icon.svg" alt="">
+<div>
+  <h1 class="title">dsh-ATLAS</h1>
+  <p class="sub">AT Last, All Sources. One <b>@</b> jumps anywhere —<br>line ranges, and the token cost of each reference before you send.</p>
+  <div class="chips">
+    <span class="chip">files</span><span class="chip">folders</span><span class="chip">skills</span>
+    <span class="chip">past chats</span><span class="chip">plugins</span><span class="chip">git</span>
+    <span class="chip">@src/a.ts:12-40</span>
+  </div>
+  <div class="foot"><span class="code">npm i @sidequest-007/dsh-atlas</span><span>·</span><span>MIT</span><span>·</span><span>DeepSeek Harness plugin</span></div>
+</div>
+</html>

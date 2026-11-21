@@ -196,6 +196,16 @@ export interface MentionSourceDeps {
   onRecent?(sessionId: SessionId, absolute: string, relative: string): void
   /** Record one pick in the cross-category usage counters. */
   onUsage?(sessionId: SessionId, kind: string, value: string): void
+  /**
+   * Report one pick that names a directory OUTSIDE the workspace.
+   *
+   * The Host only records such a path at `agent/pre-step`, so a folder picked
+   * here stayed out of the scope the `@` menu reads until a message carrying it
+   * was sent. The pick itself is that statement, and the owner records it.
+   * @param sessionId - the session whose composer made the pick.
+   * @param absolute - the absolute directory the pick referenced.
+   */
+  onExternalDir?(sessionId: SessionId, absolute: string): void
   /** The live cross-category pick counters (highest count first). */
   usage?(): readonly UsageEntry[]
   /**
@@ -2038,6 +2048,14 @@ export function createMentionSource(deps: MentionSourceDeps): MentionSource {
         // `docs` but never a 区外 folder of the same name). They match here on the
         // same query, tagged like every other leaf row, and the settled scope answers
         // synchronously — a cold scope simply contributes nothing.
+        if (externalFetches.get(session.sessionId)?.settled === undefined) {
+          // The rows below are read from the settled snapshot, so a COLD scope used
+          // to contribute nothing at all — the first `@dsh` after a folder was added
+          // showed no out-of-workspace row, and only a later keystroke (after the
+          // fetch landed) found it. One await closes that hole; a settled scope is
+          // still a plain synchronous read.
+          await fetchExternal(session.sessionId, signal).catch(() => NO_EXTERNAL)
+        }
         const externalMatches = externalFolderRows(session.sessionId)
           .filter(row => matches(query, row.name))
         const relevance = [
@@ -2152,12 +2170,18 @@ export function createMentionSource(deps: MentionSourceDeps): MentionSource {
       }
       if (candidate.mentionKind === 'browse-dir') {
         // Picking a folder row IS the reference; the chevron/Tab (a drill) walks
-        // into it instead, which is the framework's own descent gesture.
+        // into it instead, which is the framework's own descent gesture. Either
+        // gesture puts the folder in play, so the owner records it now — the Host
+        // would not learn it until a message carrying it was sent.
+        if (candidate.value !== undefined) deps.onExternalDir?.(session.sessionId, candidate.value)
         return action === 'drill'
           ? { text: `@${candidate.value ?? ''}/`, continue: true }
           : { text: `@${candidate.value ?? ''}/ ` }
       }
       if (candidate.mentionKind === 'browse-file') {
+        // A file reference puts its folder in play, which is what the `@folder:`
+        // list needs; the file itself is not a directory and is never recorded.
+        if (candidate.value !== undefined) deps.onExternalDir?.(session.sessionId, dirnameOf(candidate.value))
         return { text: `@${candidate.value ?? ''} ` }
       }
       if (candidate.mentionKind === 'dir-group' || candidate.mentionKind === 'browse-note') {
@@ -2181,6 +2205,10 @@ export function createMentionSource(deps: MentionSourceDeps): MentionSource {
           const path = value.replace(/[/\\]+$/u, '')
           const suffix = candidate.mentionKind === 'dir' ? '/' : ''
           deps.onUsage?.(session.sessionId, candidate.mentionKind === 'dir' ? 'dir' : 'file', `${path}${suffix}`)
+          // Same reason as the browser's rows: an out-of-workspace pick is the
+          // user's statement that the folder is in play, and a FILE row implies
+          // the directory that holds it.
+          deps.onExternalDir?.(session.sessionId, candidate.mentionKind === 'dir' ? path : dirnameOf(path))
           return { text: `@${path}${suffix} ` }
         }
         const entry = candidate.value === undefined ? undefined : findEntry(session.sessionId, candidate.value)

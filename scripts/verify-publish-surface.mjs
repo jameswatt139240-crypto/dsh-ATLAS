@@ -57,6 +57,8 @@ const REQUIRED = [
   'README.zh.md',
   'CHANGELOG.md',
   'CONTRIBUTING.md',
+  'icon.svg',
+  'assets/brand/atlas-icon-128.png',
   // Every image the READMEs reference, so the npm page cannot show a broken one.
   'assets/diagrams/atlas-overview.svg',
   'assets/diagrams/atlas-seam.svg',

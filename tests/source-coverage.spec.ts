@@ -1043,3 +1043,121 @@ describe('a chat row without a value', () => {
     expect(onUsage).not.toHaveBeenCalled()
   })
 })
+
+/**
+ * The out-of-workspace scope, and the pick that puts a folder into it.
+ *
+ * Reported: a folder added as an out-of-workspace reference was invisible to
+ * `@`, `@folder:`, `@dsh` and `@DSH` right after it was added, and only showed
+ * up "a while later". Three separate causes, all covered here: the scope's rows
+ * were read from the settled snapshot only (a cold scope contributed nothing),
+ * nothing recorded the folder until a message carrying it was SENT, and the
+ * settled scope outlived the ledger change by a whole TTL.
+ */
+const WITHOUT_ATLAS: ExternalAccessScopeFixture = {
+  canDiscover: true,
+  roots: ['/home/ubuntu/Eason/DSH-Atlas'],
+  folders: ['/home/ubuntu/Eason/DSH-Atlas'],
+}
+
+type ExternalAccessScopeFixture = Parameters<typeof createMentionSource>[0]['external'] extends
+  (sessionId: SessionId, signal: AbortSignal) => Promise<infer Scope> ? Scope : never
+
+const scopeHarness = (extra: Partial<Parameters<typeof createMentionSource>[0]> = {}) => {
+  const external = vi.fn(async () => WITHOUT_ATLAS)
+  const h = harness({ extra: { external, ...extra } })
+  return { ...h, external }
+}
+
+describe('the out-of-workspace folder scope', () => {
+  it('answers the FIRST query from a cold scope instead of nothing', async () => {
+    const { ask, external } = scopeHarness()
+    const rows = await ask('dsh')
+    expect(external).toHaveBeenCalled()
+    expect(rows.some(row => row.name === 'DSH-Atlas/')).toBe(true)
+  })
+
+  it('matches the folder name whatever the case of the query', async () => {
+    const { ask } = scopeHarness()
+    for (const query of ['dsh', 'DSH', 'Dsh', 'dSh', 'DSH-Atl', 'dsh-at']) {
+      const rows = await ask(query)
+      expect(rows.some(row => row.name === 'DSH-Atlas/'), query).toBe(true)
+    }
+  })
+
+  it('keeps answering when the scope itself fails, with the workspace matches only', async () => {
+    const external = vi.fn(async () => { throw new Error('scope down') })
+    const h = harness({ extra: { external } })
+    const rows = await h.ask('dsh')
+    expect(external).toHaveBeenCalled()
+    // A broken scope is a soft failure: the menu still lists what the index knows.
+    expect(rows.some(row => row.name === 'DSH-Atlas/')).toBe(false)
+    expect(rows.every(row => row.mentionKind !== 'dir' || !String(row.value ?? '').startsWith('/'))).toBe(true)
+  })
+
+  it('drops the settled scope so the next query sees a folder the ledger just gained', async () => {
+    const folders = ['/home/ubuntu/Eason/Old']
+    const external = vi.fn(async () => ({ canDiscover: true, roots: [...folders], folders: [...folders] }))
+    const h = harness({ extra: { external } })
+    expect((await h.ask('dsh')).some(row => row.name === 'DSH-Atlas/')).toBe(false)
+    folders.push('/home/ubuntu/Eason/DSH-Atlas')
+    // A stale-but-settled scope keeps answering the old value for one TTL.
+    expect((await h.ask('dsh')).some(row => row.name === 'DSH-Atlas/')).toBe(false)
+    h.invalidateExternal('s1' as SessionId)
+    expect((await h.ask('dsh')).some(row => row.name === 'DSH-Atlas/')).toBe(true)
+  })
+})
+
+describe('the picks that put a folder into the scope', () => {
+  it('reports an out-of-workspace folder row as a directory the user just put in play', () => {
+    const onExternalDir = vi.fn()
+    const h = harness({ extra: { onExternalDir } })
+    expect(h.source.onPick(pick({
+      name: 'DSH-Atlas/',
+      value: '/home/ubuntu/Eason/DSH-Atlas/',
+      mentionKind: 'dir',
+      atFileKind: 'dir',
+    }) as never)).toEqual({ text: '@/home/ubuntu/Eason/DSH-Atlas/ ' })
+    expect(onExternalDir).toHaveBeenCalledWith('s1', '/home/ubuntu/Eason/DSH-Atlas')
+  })
+
+  it('reports the folder that holds a picked out-of-workspace file', () => {
+    const onExternalDir = vi.fn()
+    const h = harness({ extra: { onExternalDir } })
+    h.source.onPick(pick({
+      name: 'README.md',
+      value: '/home/ubuntu/Eason/DSH-Atlas/README.md',
+      mentionKind: 'file',
+      atFileKind: 'file',
+    }) as never)
+    expect(onExternalDir).toHaveBeenCalledWith('s1', '/home/ubuntu/Eason/DSH-Atlas')
+  })
+
+  it('reports a folder the browser walked into, on both the pick and the drill', () => {
+    const onExternalDir = vi.fn()
+    const h = harness({ extra: { onExternalDir } })
+    h.source.onPick(pick({ name: 'DSH-Atlas/', value: '/home/ubuntu/Eason/DSH-Atlas/', mentionKind: 'browse-dir' }) as never)
+    h.source.onPick(pick(
+      { name: 'docs/', value: '/home/ubuntu/Eason/DSH-Atlas/docs/', mentionKind: 'browse-dir' },
+      'drill',
+    ) as never)
+    expect(onExternalDir.mock.calls).toEqual([
+      ['s1', '/home/ubuntu/Eason/DSH-Atlas/'],
+      ['s1', '/home/ubuntu/Eason/DSH-Atlas/docs/'],
+    ])
+  })
+
+  it('reports the parent folder of a file the browser picked', () => {
+    const onExternalDir = vi.fn()
+    const h = harness({ extra: { onExternalDir } })
+    h.source.onPick(pick({ name: 'a.ts', value: '/home/ubuntu/Eason/DSH-Atlas/a.ts', mentionKind: 'browse-file' }) as never)
+    expect(onExternalDir).toHaveBeenCalledWith('s1', '/home/ubuntu/Eason/DSH-Atlas')
+  })
+
+  it('records nothing for a workspace row, which is already in the index', () => {
+    const onExternalDir = vi.fn()
+    const h = harness({ extra: { onExternalDir } })
+    h.source.onPick(pick({ name: 'src', value: 'src', mentionKind: 'dir' }) as never)
+    expect(onExternalDir).not.toHaveBeenCalled()
+  })
+})

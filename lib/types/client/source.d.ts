@@ -105,6 +105,16 @@ export interface MentionSourceDeps {
     onRecent?(sessionId: SessionId, absolute: string, relative: string): void;
     /** Record one pick in the cross-category usage counters. */
     onUsage?(sessionId: SessionId, kind: string, value: string): void;
+    /**
+     * Report one pick that names a directory OUTSIDE the workspace.
+     *
+     * The Host only records such a path at `agent/pre-step`, so a folder picked
+     * here stayed out of the scope the `@` menu reads until a message carrying it
+     * was sent. The pick itself is that statement, and the owner records it.
+     * @param sessionId - the session whose composer made the pick.
+     * @param absolute - the absolute directory the pick referenced.
+     */
+    onExternalDir?(sessionId: SessionId, absolute: string): void;
     /** The live cross-category pick counters (highest count first). */
     usage?(): readonly UsageEntry[];
     /**
