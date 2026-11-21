@@ -67,6 +67,39 @@ function mount(items: readonly unknown[], open = true): { root: Root; host: HTML
 }
 
 describe('MenuIcons', () => {
+  it('draws the glyphs a menu that was still settling had no slots for yet', async () => {
+    // The framework paints our rows a frame or two after the store says they are
+    // ready (it opens upward, it scrolls its list into view). The first measure
+    // finds nothing; without a retry the glyphs would stay missing until the next
+    // keystroke, which is exactly the "sometimes it shows up" report.
+    const frames: FrameRequestCallback[] = []
+    const realFrame = globalThis.requestAnimationFrame
+    const realCancel = globalThis.cancelAnimationFrame
+    globalThis.requestAnimationFrame = (callback: FrameRequestCallback): number => {
+      frames.push(callback)
+      return frames.length
+    }
+    globalThis.cancelAnimationFrame = (): void => {}
+    try {
+      const { host } = mount([{ mentionKind: 'file', value: 'a.ts' }, { mentionKind: 'skill' }])
+      expect(host.querySelectorAll('.dsh_atlas_menuIcon')).toHaveLength(0)
+      // Now the rows land, exactly as the framework would render them late. They
+      // are appended, never swapped in: replacing body's markup would take this
+      // layer's own container down with it.
+      const late = document.createElement('div')
+      late.innerHTML = optionRow(0) + optionRow(1)
+      document.body.appendChild(late)
+      while (frames.length > 0) frames.shift()!(0)
+      // The retry measures outside React's event loop, so the state it sets lands
+      // in a task of its own; one macrotask is all that is needed to see it.
+      await new Promise(resolve => setTimeout(resolve, 0))
+      expect(host.querySelectorAll('.dsh_atlas_menuIcon')).toHaveLength(2)
+    } finally {
+      globalThis.requestAnimationFrame = realFrame
+      globalThis.cancelAnimationFrame = realCancel
+    }
+  })
+
   it('draws one glyph per row, over the slot the framework reserved', () => {
     document.body.innerHTML = optionRow(0) + optionRow(1)
     const { host } = mount([{ mentionKind: 'file', value: 'src/index.ts' }, { mentionKind: 'skill' }])

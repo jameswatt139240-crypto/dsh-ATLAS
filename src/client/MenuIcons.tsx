@@ -135,6 +135,19 @@ export function MenuIcons({ useMenu }: MenuIconsProps) {
   // Measure after the framework's own commit — the rows are its DOM, and this
   // component re-renders from the same store update that renders them.
   useLayoutEffect(measure, [state])
+  // A menu that is still settling — opening upward, scrolling its own list into
+  // view, a group whose rows land a frame after its header — reports slot rects
+  // this layer has to reject, and a measurement that failed ONCE stays failed
+  // until the next store update, which can be a keystroke away or may never come.
+  // That is the glyph that "sometimes shows up": two frames of retry follow the
+  // layout without polling anything.
+  useEffect(() => {
+    let frame = requestAnimationFrame(() => {
+      measure()
+      frame = requestAnimationFrame(measure)
+    })
+    return () => { cancelAnimationFrame(frame) }
+  }, [state])
   // A scrolling list or a resized window moves the slots without touching the
   // menu state, so the layer follows those two events as well.
   useEffect(() => {

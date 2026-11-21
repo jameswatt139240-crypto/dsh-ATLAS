@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.2.3] - 2026-11-21
+
+### Fixed
+
+- **Menu glyphs no longer wait for a keystroke to appear.** The layer that draws
+  this plugin's icons measures the framework's own rows, and a menu that is still
+  settling (opening upward, scrolling its list into view, a group whose rows land a
+  frame after its header) reports slots it has to reject. A rejected measurement
+  used to stand until the next store update — which is the report "the icons
+  sometimes show up, mostly they do not". It now re-measures over the next two
+  frames after every menu change.
+
 ## [1.2.2] - 2026-11-21
 
 `1.2.1` was cut but never published, so this release carries it too: the marks,
