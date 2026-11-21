@@ -1077,6 +1077,21 @@ describe('the out-of-workspace folder scope', () => {
     expect(rows.some(row => row.name === 'DSH-Atlas/')).toBe(true)
   })
 
+  it('keeps the ledger row on the FIRST render when the scope lands a macrotask late', async () => {
+    // Reported live: `@serve` listed the workspace's `serve.mjs` rows and never the
+    // out-of-workspace `serve/`, while `@folder:serve` (built after the scope had
+    // settled) did show it. Reading the cache after an await is a race; the rows
+    // have to come from the value the await answered with.
+    const { ask } = scopeHarness({
+      external: () =>
+        new Promise(resolve =>
+          setTimeout(() => resolve({ canDiscover: false, roots: [], folders: ['/outside/DSH-Atlas'] }), 0),
+        ),
+    })
+    const rows = await ask('dsh')
+    expect(rows.some(row => row.name === 'DSH-Atlas/')).toBe(true)
+  })
+
   it('matches the folder name whatever the case of the query', async () => {
     const { ask } = scopeHarness()
     for (const query of ['dsh', 'DSH', 'Dsh', 'dSh', 'DSH-Atl', 'dsh-at']) {
