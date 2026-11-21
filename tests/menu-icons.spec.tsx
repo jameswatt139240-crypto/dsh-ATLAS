@@ -231,6 +231,108 @@ describe('MenuIcons', () => {
     expect(menu).not.toContain('width')
   })
 
+  it('watches the list for rows that land after the frames gave up', async () => {
+    // The budget is 500 ms of frames; a menu whose rows arrive after that (a second
+    // plugin band repainting above ours, a slow first paint) still has to get its
+    // glyphs. The mutation watch is what catches it — no keystroke required.
+    const frames: FrameRequestCallback[] = []
+    const realFrame = globalThis.requestAnimationFrame
+    const realCancel = globalThis.cancelAnimationFrame
+    const realNow = performance.now.bind(performance)
+    globalThis.requestAnimationFrame = (callback: FrameRequestCallback): number => {
+      frames.push(callback)
+      return frames.length
+    }
+    globalThis.cancelAnimationFrame = (): void => {}
+    try {
+      const { host } = mount([{ mentionKind: 'file', value: 'a.ts' }, { mentionKind: 'skill' }])
+      let ticked = 0
+      performance.now = () => { ticked += 1; return ticked * 400 }
+      while (frames.length > 0) frames.shift()!(0)
+      expect(host.querySelectorAll('.dsh_atlas_menuIcon')).toHaveLength(0)
+      const late = document.createElement('div')
+      late.innerHTML = optionRow(0) + optionRow(1)
+      document.body.appendChild(late)
+      // The observer callback is a microtask and the state it sets lands in a task
+      // of its own; poll instead of trusting one exact tick.
+      for (let waited = 0; waited < 600 && host.querySelectorAll('.dsh_atlas_menuIcon').length < 2; waited += 10) {
+        await new Promise(resolve => setTimeout(resolve, 10))
+      }
+      expect(host.querySelectorAll('.dsh_atlas_menuIcon')).toHaveLength(2)
+    } finally {
+      performance.now = realNow
+      globalThis.requestAnimationFrame = realFrame
+      globalThis.cancelAnimationFrame = realCancel
+    }
+  })
+
+  it('lets a queued frame go quietly when the layer is torn down first', () => {
+    // A frame is already queued when the menu closes; running it after cleanup must
+    // do nothing at all (no measure, no state on an unmounted component).
+    const frames: FrameRequestCallback[] = []
+    const realFrame = globalThis.requestAnimationFrame
+    const realCancel = globalThis.cancelAnimationFrame
+    globalThis.requestAnimationFrame = (callback: FrameRequestCallback): number => {
+      frames.push(callback)
+      return frames.length
+    }
+    globalThis.cancelAnimationFrame = (): void => {}
+    try {
+      const { host, root } = mount([{ mentionKind: 'file', value: 'a.ts' }])
+      root.unmount()
+      liveRoots.delete(root)
+      while (frames.length > 0) frames.shift()!(0)
+      expect(host.querySelectorAll('.dsh_atlas_menuIcon')).toHaveLength(0)
+    } finally {
+      globalThis.requestAnimationFrame = realFrame
+      globalThis.cancelAnimationFrame = realCancel
+    }
+  })
+
+  it('works without a MutationObserver at all', async () => {
+    // Older runtimes (and a few test environments) have no MutationObserver; the
+    // frame budget alone still places every glyph.
+    const realObserver = globalThis.MutationObserver
+    // @ts-expect-error -- deliberately removing a global to cover the fallback
+    delete globalThis.MutationObserver
+    try {
+      const { host } = mount([{ mentionKind: 'file', value: 'a.ts' }, { mentionKind: 'skill' }])
+      const late = document.createElement('div')
+      late.innerHTML = optionRow(0) + optionRow(1)
+      document.body.appendChild(late)
+      for (let waited = 0; waited < 600 && host.querySelectorAll('.dsh_atlas_menuIcon').length < 2; waited += 10) {
+        await new Promise(resolve => setTimeout(resolve, 10))
+      }
+      expect(host.querySelectorAll('.dsh_atlas_menuIcon')).toHaveLength(2)
+    } finally {
+      globalThis.MutationObserver = realObserver
+    }
+  })
+
+  it('measures once more on a timer, for a window whose frames are throttled', async () => {
+    // Backgrounded windows throttle (or stop) animation frames, so the frame budget
+    // can burn without a single measurement. One delayed pass covers that case.
+    const realFrame = globalThis.requestAnimationFrame
+    const realCancel = globalThis.cancelAnimationFrame
+    globalThis.requestAnimationFrame = (): number => 0
+    globalThis.cancelAnimationFrame = (): void => {}
+    try {
+      const { host } = mount([{ mentionKind: 'file', value: 'a.ts' }, { mentionKind: 'skill' }])
+      const late = document.createElement('div')
+      late.innerHTML = optionRow(0) + optionRow(1)
+      document.body.appendChild(late)
+      // The pass is 120 ms out; poll rather than sleep a fixed 160 ms, so a loaded
+      // machine cannot turn a slow timer into a failed assertion.
+      for (let waited = 0; waited < 1200 && host.querySelectorAll('.dsh_atlas_menuIcon').length < 2; waited += 20) {
+        await new Promise(resolve => setTimeout(resolve, 20))
+      }
+      expect(host.querySelectorAll('.dsh_atlas_menuIcon')).toHaveLength(2)
+    } finally {
+      globalThis.requestAnimationFrame = realFrame
+      globalThis.cancelAnimationFrame = realCancel
+    }
+  })
+
   it('never draws a row that is scrolled out of the list, and never covers it', () => {
     // Reported live: the layer is fixed-position, so a glyph placed for a row
     // BELOW the menu's scrolling viewport escaped the menu's clipping and was

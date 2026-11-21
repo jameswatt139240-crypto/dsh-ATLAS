@@ -136,17 +136,41 @@ export function MenuIcons({ useMenu }: MenuIconsProps) {
   // component re-renders from the same store update that renders them.
   useLayoutEffect(measure, [state])
   // A menu that is still settling — opening upward, scrolling its own list into
-  // view, a group whose rows land a frame after its header — reports slot rects
-  // this layer has to reject, and a measurement that failed ONCE stays failed
-  // until the next store update, which can be a keystroke away or may never come.
-  // That is the glyph that "sometimes shows up": two frames of retry follow the
-  // layout without polling anything.
+  // view, a group whose rows land a frame after its header, a second plugin band
+  // that repaints above ours — reports slot rects this layer has to reject, and a
+  // measurement that failed ONCE stays failed until the next store update, which
+  // can be a keystroke away or may never come. That is the glyph that "sometimes
+  // shows up" (reported from a live window whose menu took longer than two frames
+  // to hold still).
+  //
+  // So three things follow the layout instead of one: a bounded run of frames
+  // (stops as soon as every row has a glyph), a mutation watch on the listbox for
+  // rows added after that run finished, and one delayed pass for the case where
+  // animation frames are throttled in a backgrounded window. None of them polls.
   useEffect(() => {
-    let frame = requestAnimationFrame(() => {
+    let stopped = false
+    let frame = 0
+    const started = performance.now()
+    const tick = (): void => {
+      if (stopped) return
       measure()
-      frame = requestAnimationFrame(measure)
-    })
-    return () => { cancelAnimationFrame(frame) }
+      // 500 ms of frames is the whole budget: past that the menu is not settling,
+      // it is being used, and the scroll/resize listeners take over.
+      if (performance.now() - started < 500) frame = requestAnimationFrame(tick)
+    }
+    frame = requestAnimationFrame(tick)
+    const list = document.querySelector('[role="listbox"]')
+    const watch = typeof MutationObserver === 'undefined' ? undefined : new MutationObserver(() => { measure() })
+    // Attributes are deliberately NOT observed: this layer writes its own marker
+    // onto the slots it covers, and watching attribute changes would feed itself.
+    watch?.observe(list ?? document.body, { childList: true, subtree: true })
+    const delayed = setTimeout(() => { measure() }, 120)
+    return () => {
+      stopped = true
+      cancelAnimationFrame(frame)
+      watch?.disconnect()
+      clearTimeout(delayed)
+    }
   }, [state])
   // A scrolling list or a resized window moves the slots without touching the
   // menu state, so the layer follows those two events as well.

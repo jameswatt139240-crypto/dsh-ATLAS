@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.5] - 2026-11-21
+
+### Fixed
+
+- Menu glyphs stay missing in a window whose menu takes longer than two frames to hold still, or whose animation frames are throttled. The glyph layer now follows the layout for a bounded half second, watches the listbox for rows that land after that, and takes one delayed pass — still without polling.
+
 ## [1.2.4] - 2026-11-21
 
 ### Added
