@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.1] - 2026-11-22
+
+### Fixed
+
+- The docs still counted **five** built-in categories after `@in:` made it six (six rows in
+  the table, but "five built in" in the prose, the masthead alt text and the Chinese copy).
+  The counts now match the menu, and the resource-family tally is seven with `@git`.
+
 ## [1.3.0] - 2026-11-22
 
 ### Added

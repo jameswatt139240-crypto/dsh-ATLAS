@@ -16,7 +16,7 @@ Beyond the **built-in `@`**: line ranges like `@src/a.ts:12-40`, skills, plugins
 
 A **Side Quest** project (工作室：支线任务, **Side Quest Labs**) — npm scope `@sidequest-007/*`, repository [`jameswatt139240-crypto/dsh-ATLAS`](https://github.com/jameswatt139240-crypto/dsh-ATLAS); the DSH plugin id keeps the ecosystem's unscoped `dsh-*` form.
 
-<img src="assets/diagrams/atlas-overview.svg" alt="dsh-ATLAS: one @ trigger, five built-in categories plus the bundled git category, and a category any plugin can register" width="880">
+<img src="assets/diagrams/atlas-overview.svg" alt="dsh-ATLAS: one @ trigger, six built-in categories plus the bundled git category, and a category any plugin can register" width="880">
 
 **AT Last, All Sources.**
 
@@ -26,7 +26,7 @@ Every reference it draws is a **clickable link** (the theme's link colour, so bl
 
 Unified `@` mentions for the DeepSeek Harness web GUI: type `@` in the composer to reference **workspace files and folders**, **discoverable skills**, **past chats**, **installed plugins**, and **workspace git changes** — and any other plugin can add its own category to the same menu. Clicking a **session** mention switches the composer to that session.
 
-- **One `@`, every source**: five built-in categories plus the bundled `@git` provider — six resource families in this deployment — and every registered provider, in one list; typing letters searches all of them at once.
+- **One `@`, every source**: six built-in categories plus the bundled `@git` provider — seven resource families in this deployment — and every registered provider, in one list; typing letters searches all of them at once.
 - **A platform, not a picker**: third-party plugins register their own `@` category through the `ctx.atlas` seam. The menu rebuilds from the live registry on every open, so **this package never has to change for a provider** — see [Write your own `@` source](#write-your-own--source).
 - **Provenance, never content**: a committed mention injects a marker (`<workspace-reference>`, `<skill-reference>`, `<atlas-reference>`, …) and nothing else. The plugin reads directory metadata only; the agent reads the file itself, if and when it needs to.
 - **Governed by construction**: `scopes` and `testedOn` are required, a duplicate `id` throws, a version mismatch registers as `verified: false`, and every provider body is budgeted (16 KiB per reference, 48 KiB per step).
@@ -103,7 +103,7 @@ The last two rows are the argument. In an editor, attaching `@db.ts` to reach on
 
 ## The categories
 
-The menu keeps the category rows — five built in, plus the bundled `@git` — in its **bottom band**, the rows nearest the composer, so pressing `@` opens on them rather than on whatever else shares the trigger.
+The menu keeps the category rows — six built in, plus the bundled `@git` — in its **bottom band**, the rows nearest the composer, so pressing `@` opens on them rather than on whatever else shares the trigger.
 
 | Category | Menu prefix | Shortcut | Candidates from | Written into the draft |
 |---|---|---|---|---|
@@ -114,11 +114,11 @@ The menu keeps the category rows — five built in, plus the bundled `@git` — 
 | Plugin | `plugin:` | `P` | The official plugin inventory | `@plugin:dsh-atlas` |
 | In folder | `in:` | `I` | A folder the draft declares, searched **recursively** | `@in:/data/reports/` then `@in:q3` |
 
-**One shortcut letter is a statement of intent, not a query.** Typing it shows the category rows — five built-in plus the bundled `@git` — and a `Tab 补全 → category:` hint as the **last** row, with the highlight already on that hint; <kbd>Tab</kbd> or <kbd>Enter</kbd> then enters the `category:` prefix. **A registered source can claim a shortcut letter too**: the first letter of its id (`@git` → <kbd>G</kbd>), and only while no built-in category or earlier provider answers to that letter (the `@<id>:` prefix always works). Filtering starts on anything more specific — a first letter that is not a shortcut, or a second character (which is what the `fi`/`fo`/`sk`/`ch`/`pl` spellings are). Clicking a category row or the back row enters/returns the same way and **keeps the menu open** — that is this plugin's own override; the normal pick path closes it.
+**One shortcut letter is a statement of intent, not a query.** Typing it shows the category rows — six built-in plus the bundled `@git` — and a `Tab 补全 → category:` hint as the **last** row, with the highlight already on that hint; <kbd>Tab</kbd> or <kbd>Enter</kbd> then enters the `category:` prefix. **A registered source can claim a shortcut letter too**: the first letter of its id (`@git` → <kbd>G</kbd>), and only while no built-in category or earlier provider answers to that letter (the `@<id>:` prefix always works). Filtering starts on anything more specific — a first letter that is not a shortcut, or a second character (which is what the `fi`/`fo`/`sk`/`ch`/`pl` spellings are). Clicking a category row or the back row enters/returns the same way and **keeps the menu open** — that is this plugin's own override; the normal pick path closes it.
 
 **`@in:` is the one category that searches *outside* the workspace on purpose.** A path ending in a separator **declares** the folder — `@in:/data/reports/` answers with that folder's own contents and hands the folder to the host, so it also shows up as an out-of-workspace folder everywhere else. Anything you type afterwards is matched inside it, three levels deep; write the query in the same token to jump straight there (`@in:/data/reports/q3`). The plain `@` menu cannot do this job: once the harness's file index is warm that menu belongs to its own file picker and drops the rows a plugin source answers with, which is why the recursive search lives in a category we own.
 
-**Registered sources are the sixth row and beyond.** `@git` ships built in (the workspace's changed files, with each file's diff as the referenced content), and any plugin can add its own category the same way — see [Write your own `@` source](#write-your-own--source). They appear after the built-ins, in registration order, and disappear when the plugin that registered them is disposed. The plugin's group itself is registered with a **positive order**, so it is the last group in the menu: the bottom band belongs to this plugin, and the stock `dsh-client-ui-reference` source's file list stays above it.
+**Registered sources are the seventh row and beyond.** `@git` ships built in (the workspace's changed files, with each file's diff as the referenced content), and any plugin can add its own category the same way — see [Write your own `@` source](#write-your-own--source). They appear after the built-ins, in registration order, and disappear when the plugin that registered them is disposed. The plugin's group itself is registered with a **positive order**, so it is the last group in the menu: the bottom band belongs to this plugin, and the stock `dsh-client-ui-reference` source's file list stays above it.
 
 ## Interaction
 
