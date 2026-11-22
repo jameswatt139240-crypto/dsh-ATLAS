@@ -1083,6 +1083,7 @@ describe('the folder the draft points at, searched by a plain @', () => {
         list: async () => ({ path: '/home/ubuntu/Downloads', entries }),
       },
     })
+    await h.ask('Fable') // first keystroke starts the listing
     const rows = await h.ask('Fable')
     expect(rows.some(row => row.name === 'Fable5.2-Godot-四个工程.zip')).toBe(true)
     expect(rows.find(row => row.name === 'Fable5.2-Godot-四个工程.zip')?.value)
@@ -1096,6 +1097,7 @@ describe('the folder the draft points at, searched by a plain @', () => {
         list: async () => ({ path: '/home/ubuntu/Downloads', entries }),
       },
     })
+    await h.ask('godot')
     const rows = await h.ask('godot')
     const row = rows.find(candidate => candidate.name === 'godot-src/')
     expect(row?.mentionKind).toBe('dir')
@@ -1128,6 +1130,7 @@ describe('the folder the draft points at, searched by a plain @', () => {
       },
     })
     await h.ask('Fable')
+    await new Promise(resolve => setTimeout(resolve, 0))
     expect(warn).toHaveBeenCalledWith('[dsh-atlas] scoped folder listing failed:', expect.any(Error))
     warn.mockRestore()
   })
@@ -1145,6 +1148,7 @@ describe('the folder the draft points at, searched by a plain @', () => {
       },
     })
     await listed.ask('Fable')
+    await new Promise(resolve => setTimeout(resolve, 0))
     expect(warn).not.toHaveBeenCalled()
     warn.mockRestore()
   })
@@ -1160,7 +1164,10 @@ describe('the folder the draft points at, searched by a plain @', () => {
         },
       },
     })
-    expect(await h.ask('Fable', 's1', caller.signal)).toEqual([])
+    // The mixed view no longer waits for the listing, so an abort mid-listing
+    // costs it the scoped row, not the whole menu.
+    const rows = await h.ask('Fable', 's1', caller.signal)
+    expect(rows.some(row => row.name === 'Fable.zip')).toBe(false)
   })
 
   it('contributes nothing when the folder cannot be listed', async () => {

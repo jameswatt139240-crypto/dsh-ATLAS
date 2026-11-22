@@ -1340,6 +1340,7 @@ export function createMentionSource(deps: MentionSourceDeps): MentionSource {
     const path = scopePath.replace(/[/\\]+$/u, '')
     // A workspace folder is already in the index; listing it again would show the
     // same file twice and spend the budget on it twice.
+    lastScopePaths.set(sessionId, scopePath)
     if (path === '' || insideWorkspace(sessionId, path)) return []
     let listing: DirectoryListing
     try {
@@ -1650,6 +1651,48 @@ export function createMentionSource(deps: MentionSourceDeps): MentionSource {
         description: `${outside} · ${normalized}`,
       }))
     return { path: normalized, label: basenameOf(normalized), rows }
+  }
+
+  /**
+   * The draft-scoped rows a mixed query can add WITHOUT waiting.
+   *
+   * The mixed view runs on every keystroke, and a call that waits for a folder
+   * listing is a call the next keystroke can abort — on a live draft that cost the
+   * menu every scoped row, because the answer landed after the caller was gone.
+   * The listing cache is filled by {@link scopeRowsForQuery}, which the mixed view
+   * starts without waiting for; from the second keystroke on, the rows are here.
+   * @param sessionId - the session whose draft is scoped.
+   * @param query - the live query, matched against entry names.
+   * @returns the matching files and sub-folders, or none when nothing is settled.
+   */
+  const settledScopeRows = (sessionId: SessionId, query: string): readonly MentionCandidate[] => {
+    const path = lastScopePaths.get(sessionId)
+    if (path === undefined) return []
+    const normalized = path.replace(/[/\\]+$/u, '')
+    if (normalized === '' || insideWorkspace(sessionId, normalized)) return []
+    const listing = scopeListings.get(`${sessionId}\u0000${normalized.toLowerCase()}`)?.settled
+    if (listing === undefined || listing.error !== undefined) return []
+    const needle = query.trim().toLowerCase()
+    const outside = t?.('folder.outside') ?? '工作区外'
+    return listing.entries
+      .filter(entry => needle === '' || entry.name.toLowerCase().includes(needle))
+      .map(entry => (entry.kind === 'dir'
+        ? {
+            name: `${entry.name}/`,
+            icon: menuIconKind('folder'),
+            value: `${childOf(listing.path, entry.name)}/`,
+            atFileKind: 'dir' as const,
+            mentionKind: 'dir' as const,
+            description: `${outside} · ${normalized}`,
+          }
+        : {
+            name: entry.name,
+            icon: menuIconKind('file'),
+            value: childOf(listing.path, entry.name),
+            atFileKind: 'file' as const,
+            mentionKind: 'file' as const,
+            description: `${outside} · ${normalized}`,
+          }))
   }
 
   /**
@@ -2126,7 +2169,15 @@ export function createMentionSource(deps: MentionSourceDeps): MentionSource {
         // followed by a plain `@` reaches that folder's files and sub-folders.
         // The helper swallows its own failures (a scope is a hint, never a reason to
         // empty the menu), so there is nothing to catch here.
-        const scopeMatches = await scopeRowsForQuery(session.sessionId, query, signal)
+        const scopeMatches = settledScopeRows(session.sessionId, query)
+        if (scopeMatches.length === 0) {
+          // Cold listing: start it and let the next keystroke read it. It runs on its
+          // OWN signal on purpose — the keystroke that starts it is superseded within
+          // a few frames, and a listing that inherits that signal settles as an EMPTY
+          // folder and caches the emptiness (measured live: 37 entries, empty cache).
+          void scopeRowsForQuery(session.sessionId, query, new AbortController().signal)
+            .catch(() => undefined)
+        }
         if (signal.aborted) return []
         const relevance = [
           ...externalMatches.slice(0, 4),
@@ -2137,6 +2188,21 @@ export function createMentionSource(deps: MentionSourceDeps): MentionSource {
           ...pluginRows(plugins, query, 2, key => isCollapsed(session.sessionId, key), t, true, true),
           ...await providerMatches(query, session.sessionId, signal),
         ].slice(0, MAX_CANDIDATES - CATEGORIES.length - providers.length - usage.length - (usage.length > 0 ? 1 : 0))
+        if (scopeMatches.length > 0) {
+          // A draft that names a folder is answered the way the `@file:` page
+          // answers it: one flat list, the scoped rows first. The sectioned mixed
+          // list (with its `全部匹配` header) is what the menu dropped these rows
+          // from on a live draft, while the same rows rendered fine in the flat
+          // page — so the scope gets the flat shape it is known to render in.
+          const tail0 = completion === undefined
+            ? categoryRows(t, providers)
+            : [...categoryRows(t, providers), hintRow(completion, t)]
+          return [
+            ...scopeMatches.slice(0, 6),
+            ...candidateRows(rankFilesWithFuzzy(relevantFiles, query, 8), 'both', true, t),
+            ...tail0,
+          ]
+        }
         const rows: MentionCandidate[] = []
         // The failure notice goes FIRST, above everything: when the index could not
         // be read, "no files match" is a lie about the workspace, and it is the

@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.2.7] - 2026-11-22
+
+### Changed
+
+- A draft that names an out-of-workspace folder now feeds the plain `@` search from the
+  **settled** listing instead of awaiting it: a keystroke that started the listing was
+  superseded within a few frames, and the listing then settled as an empty folder and
+  cached the emptiness (measured live: 37 entries on disk, empty cache). The listing is
+  warmed on its own signal so it outlives the keystroke that started it.
+- When that scope has rows, the mixed view answers with one flat list (scoped rows first)
+  instead of the sectioned list — the same shape the `@file:` page renders them in.
+
+### Notes
+
+- The plain-`@` menu belongs to the harness once its file index is warm: it renders its own
+  file picker and discards the rows a plugin source answers with (verified three ways:
+  rows computed with no rejection, a scope-only answer, and a synchronous answer all
+  rendered as the built-in picker). The reliable route for a scoped folder is `@file:<query>`,
+  which the `@file:` page owns end to end.
+
 ## [1.2.6] - 2026-11-21
 
 ### Added
