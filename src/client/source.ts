@@ -62,6 +62,8 @@ export const SOURCE_NAME = 'atlas'
 
 /** Design cap on visible picker rows (the menu height is maximized by CSS). */
 export const MAX_CANDIDATES = 20
+/** How deep `@in:` recurses: enough for a project, cheap enough per keystroke. */
+const IN_FOLDER_DEPTH = 3
 
 /** How many provider rows one mixed search may contribute in total. */
 export const PROVIDER_MIX_LIMIT = 6
@@ -76,7 +78,7 @@ export const CATEGORY_TTL_MS = 30_000
 export const CHAT_PAGE = 20
 
 /** One category key (folder rows are routed as dir mentions). */
-export type CategoryKey = 'file' | 'folder' | 'skill' | 'chat' | 'plugin' | 'provider'
+export type CategoryKey = 'file' | 'folder' | 'skill' | 'chat' | 'plugin' | 'in' | 'provider'
 
 /** One selectable category row. */
 export interface CategoryDef {
@@ -108,6 +110,11 @@ export const CATEGORIES: readonly CategoryDef[] = [
   { key: 'skill', prefix: 'skill:', name: 'Skill', nameKey: 'cat.skill', shortcut: 'S', english: 'skill' },
   { key: 'chat', prefix: 'chat:', name: '过去的聊天', nameKey: 'cat.chat', shortcut: 'C', english: 'chat' },
   { key: 'plugin', prefix: 'plugin:', name: '插件', nameKey: 'cat.plugin', shortcut: 'P', english: 'plugin' },
+  // A folder DECLARED in the draft (`@in:/path/`) and searched recursively by a
+  // later `@in:<query>`. It is a category of its own because the harness's plain
+  // `@` menu belongs to its file picker once the index is warm — a plugin only
+  // owns its category pages, so the recursive search has to live in one.
+  { key: 'in', prefix: 'in:', name: '指定文件夹', nameKey: 'cat.in', shortcut: 'I', english: 'in' },
 ]
 
 /**
@@ -132,6 +139,7 @@ function categoryLabel(category: CategoryDef, t?: Translate): string {
  * @returns the icon kind the built-in icon set understands.
  */
 function categoryGlyph(category: CategoryDef): 'file' | 'folder' | 'skill' | 'chat' | 'plugin' {
+  if (category.key === 'in') return 'folder'
   if (category.providerId !== undefined || category.key === 'provider') return 'plugin'
   return category.key as 'file' | 'folder' | 'skill' | 'chat' | 'plugin'
 }
@@ -968,6 +976,10 @@ export function createMentionSource(deps: MentionSourceDeps): MentionSource {
    * mid-gesture.
    */
   const lastScopePaths = new Map<SessionId, string>()
+  /** Folders DECLARED with `@in:<path>` — searched by a later `@in:<query>`. */
+  const inFolders = new Map<SessionId, string>()
+  /** Folders already handed to the host ledger, so one declaration writes once. */
+  const declaredInFolders = new Set<string>()
   const warmedSessions = new Set<SessionId>()
   const rememberRendered = (sessionId: SessionId, key: string, collapsed: boolean): void => {
     const state = renderedGroups.get(sessionId) ?? new Map<string, boolean>()
@@ -1859,6 +1871,112 @@ export function createMentionSource(deps: MentionSourceDeps): MentionSource {
     return results.flat()
   }
 
+
+  /**
+   * Recursive search inside a folder DECLARED in the draft.
+   *
+   * Two spellings, one mechanism: `@in:/path/to/folder` declares the folder (and hands
+   * it to the host ledger, so it also shows up as an out-of-workspace folder
+   * everywhere else) and answers with its own contents; `@in:<query>` searches the
+   * folder declared a moment ago, recursing a few levels deep. Depth and row budget
+   * are bounded on purpose — this runs on every keystroke.
+   * @param sessionId - the session whose draft holds the declaration.
+   * @param sub - the query after `in:`.
+   * @param signal - caller lifetime.
+   * @returns the matching files and sub-folders.
+   */
+  const inFolderRows = async (
+    sessionId: SessionId,
+    sub: string,
+    signal: AbortSignal,
+  ): Promise<readonly MentionCandidate[]> => {
+    const declared = sub.trim()
+    const looksAbsolute =
+      declared.startsWith('/') || declared.startsWith('~') || /^[A-Za-z]:[\\/]/u.test(declared)
+    let path: string | undefined
+    let needle = declared
+    if (looksAbsolute) {
+      // A TRAILING separator declares the folder itself (`@in:/a/b/`); without it the
+      // last segment is the query (`@in:/a/b/fab` searches /a/b for "fab").
+      if (/[/\\]$/u.test(declared)) {
+        path = declared
+        needle = ''
+      } else {
+        const cut = Math.max(declared.lastIndexOf('/'), declared.lastIndexOf('\\'))
+        if (cut > 0) {
+          path = declared.slice(0, cut)
+          needle = declared.slice(cut + 1)
+        } else {
+          path = declared
+          needle = ''
+        }
+      }
+    } else {
+      path = inFolders.get(sessionId)
+    }
+    if (path === undefined || path.trim() === '') return []
+    const trimmed = path.replace(/[/\\]+$/u, '')
+    const normalized = trimmed === '' ? '/' : trimmed
+    inFolders.set(sessionId, normalized)
+    const declaredKey = `${sessionId}\u0000${normalized.toLowerCase()}`
+    if (!declaredInFolders.has(declaredKey)) {
+      declaredInFolders.add(declaredKey)
+      deps.onExternalDir?.(sessionId, normalized)
+    }
+    const list = deps.list
+    if (list === undefined) return []
+    const outside = t?.('folder.outside') ?? '工作区外'
+    const wanted = needle.toLowerCase()
+    const rows: MentionCandidate[] = []
+    const queue: { readonly dir: string; readonly depth: number }[] = [{ dir: normalized, depth: 0 }]
+    // No visited-set: a child path is always longer than its parent and the depth
+    // budget stops the walk, so the only cycles a symlink could build are bounded.
+    while (queue.length > 0 && rows.length < MAX_CANDIDATES) {
+      const current = queue.shift() as { readonly dir: string; readonly depth: number }
+      let listing: DirectoryListing
+      try {
+        listing = await list(sessionId, current.dir, signal)
+      } catch (error) {
+        if (!isCancellation(error, signal)) console.warn('[dsh-atlas] declared folder listing failed:', error)
+        continue
+      }
+      if (signal.aborted) return []
+      if (listing.error !== undefined) continue
+      const prefix = current.dir === normalized ? '' : current.dir.slice(normalized.length).replace(/^[/\\]+/u, '')
+      for (const entry of listing.entries) {
+        if (rows.length >= MAX_CANDIDATES) break
+        const deeper = entry.kind === 'dir' && current.depth + 1 < IN_FOLDER_DEPTH
+        if (wanted !== '' && !entry.name.toLowerCase().includes(wanted)) {
+          // A folder that does not match can still HOLD a match: keep walking.
+          if (deeper) queue.push({ dir: childOf(listing.path, entry.name), depth: current.depth + 1 })
+          continue
+        }
+        const where = prefix === '' ? normalized : `${normalized}/${prefix}`
+        if (entry.kind === 'dir') {
+          rows.push({
+            name: `${entry.name}/`,
+            icon: menuIconKind('folder'),
+            value: `${childOf(listing.path, entry.name)}/`,
+            atFileKind: 'dir' as const,
+            mentionKind: 'dir' as const,
+            description: `${outside} · ${where}`,
+          })
+          if (deeper) queue.push({ dir: childOf(listing.path, entry.name), depth: current.depth + 1 })
+        } else {
+          rows.push({
+            name: entry.name,
+            icon: menuIconKind('file'),
+            value: childOf(listing.path, entry.name),
+            atFileKind: 'file' as const,
+            mentionKind: 'file' as const,
+            description: `${outside} · ${where}`,
+          })
+        }
+      }
+    }
+    return rows
+  }
+
   /** Rebuild the rows for one category query synchronously from settled caches. */
   const rebuildRows = (sessionId: SessionId, query: string): readonly MentionCandidate[] | undefined => {
     const category = categoryOfQuery(query)
@@ -2175,10 +2293,10 @@ export function createMentionSource(deps: MentionSourceDeps): MentionSource {
           // OWN signal on purpose — the keystroke that starts it is superseded within
           // a few frames, and a listing that inherits that signal settles as an EMPTY
           // folder and caches the emptiness (measured live: 37 entries, empty cache).
+          // It swallows its own failures (a scope is a hint, never a reason to empty
+          // the menu), so there is no rejection to catch and nothing to await.
           void scopeRowsForQuery(session.sessionId, query, new AbortController().signal)
-            .catch(() => undefined)
         }
-        if (signal.aborted) return []
         const relevance = [
           ...externalMatches.slice(0, 4),
           ...scopeMatches.slice(0, 6),
@@ -2254,6 +2372,9 @@ export function createMentionSource(deps: MentionSourceDeps): MentionSource {
           if (signal.aborted) return []
           rows = fileCategoryRows(session.sessionId, files, sub, scope)
         }
+      } else if (category.key === 'in') {
+        rows = await inFolderRows(session.sessionId, sub, signal)
+        if (signal.aborted) return []
       } else if (category.key === 'skill') {
         const skills = await fetchSkills(session.sessionId, signal)
         if (signal.aborted) return []

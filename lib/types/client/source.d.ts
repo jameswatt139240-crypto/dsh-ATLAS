@@ -47,7 +47,7 @@ export declare const CATEGORY_TTL_MS = 30000;
 /** One preloaded page of past-chat candidates (menu height is 12; 20 gives headroom). */
 export declare const CHAT_PAGE = 20;
 /** One category key (folder rows are routed as dir mentions). */
-export type CategoryKey = 'file' | 'folder' | 'skill' | 'chat' | 'plugin' | 'provider';
+export type CategoryKey = 'file' | 'folder' | 'skill' | 'chat' | 'plugin' | 'in' | 'provider';
 /** One selectable category row. */
 export interface CategoryDef {
     readonly key: CategoryKey;

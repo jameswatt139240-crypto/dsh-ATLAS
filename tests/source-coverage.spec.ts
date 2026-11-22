@@ -1292,3 +1292,287 @@ describe('the picks that put a folder into the scope', () => {
     expect(onExternalDir).not.toHaveBeenCalled()
   })
 })
+
+describe('the folder a draft declares with in:', () => {
+  const listing = (path: string, entries: readonly { name: string; kind: 'file' | 'dir' }[]) => ({
+    path,
+    entries,
+    truncated: false,
+  })
+  const tree: Record<string, { name: string; kind: 'file' | 'dir' }[]> = {
+    '/outside/work': [
+      { name: 'Fable5.2-Godot-四个工程.zip', kind: 'file' },
+      { name: 'godot-src', kind: 'dir' },
+      { name: 'notes.md', kind: 'file' },
+    ],
+    '/outside/work/godot-src': [
+      { name: 'project.godot', kind: 'file' },
+      { name: 'assets', kind: 'dir' },
+    ],
+    '/outside/work/godot-src/assets': [{ name: 'fable-icon.png', kind: 'file' }],
+  }
+  const dirs = (paths: string[], order: readonly string[], sessions: string[] = []) => {
+    const asked: string[] = []
+    return {
+      asked,
+      list: async (_id: string, path: string) => {
+        asked.push(path)
+        const key = Object.keys(tree).find(candidate => candidate === path)
+        return key === undefined
+          ? { path, entries: [], truncated: false, error: 'outside' as const }
+          : listing(path, tree[key]!)
+      },
+    }
+  }
+
+  it('declares a folder and answers with its own contents', async () => {
+    const spy = vi.fn()
+    const probe = dirs()
+    const h = harness({ extra: { list: probe.list, onExternalDir: spy } })
+    const rows = await h.ask('in:/outside/work/')
+    expect(rows.map(row => row.name)).toContain('Fable5.2-Godot-四个工程.zip')
+    expect(rows.map(row => row.name)).toContain('godot-src/')
+    // The declaration is what puts the folder into the host ledger.
+    expect(spy).toHaveBeenCalledWith('s1', '/outside/work')
+  })
+
+  it('searches the declared folder on the next query, recursively', async () => {
+    const h = harness({ extra: { list: dirs().list } })
+    await h.ask('in:/outside/work/')
+    const rows = await h.ask('in:fable')
+    const names = rows.map(row => row.name)
+    expect(names).toContain('Fable5.2-Godot-四个工程.zip')
+    // Two levels down, and the folder that holds the match is still reported.
+    expect(names).toContain('fable-icon.png')
+    expect(rows.find(row => row.name === 'fable-icon.png')?.description).toContain('/outside/work/godot-src/assets')
+  })
+
+  it('marks a matched sub-folder as a folder', async () => {
+    const h = harness({ extra: { list: dirs().list } })
+    await h.ask('in:/outside/work/')
+    const rows = await h.ask('in:godot')
+    const row = rows.find(candidate => candidate.name === 'godot-src/')
+    expect(row?.mentionKind).toBe('dir')
+    expect(row?.value).toBe('/outside/work/godot-src/')
+  })
+
+  it('answers nothing before any folder was declared', async () => {
+    const h = harness({ extra: { list: dirs().list } })
+    const rows = await h.ask('in:fable')
+    // Only the back row: nothing was declared, so there is nothing to walk.
+    expect(rows.map(row => row.name)).toEqual(['返回类别'])
+  })
+
+  it('declares a folder whose path has no inner separator', async () => {
+    const asked: string[] = []
+    const h = harness({
+      extra: {
+        list: async (_id: string, path: string) => {
+          asked.push(path)
+          return path === '/work' ? listing(path, [{ name: 'Fable.zip', kind: 'file' as const }]) : listing(path, [])
+        },
+      },
+    })
+    const rows = await h.ask('in:/work')
+    expect(asked).toEqual(['/work'])
+    expect(rows.map(row => row.name)).toContain('Fable.zip')
+  })
+
+  it('answers from the root when the declaration trims to nothing', async () => {
+    const asked: string[] = []
+    const h = harness({
+      extra: {
+        list: async (_id: string, path: string) => {
+          asked.push(path)
+          return listing(path, [{ name: 'fable.txt', kind: 'file' as const }])
+        },
+      },
+    })
+    await h.ask('in:///')
+    expect(asked).toEqual(['/'])
+  })
+
+  it('keeps the walk inside the row budget', async () => {
+    const many = Array.from({ length: 30 }, (_unused, index) => ({ name: `fable-${index}.zip`, kind: 'file' as const }))
+    const h = harness({ extra: { list: async (_id: string, path: string) => listing(path, many) } })
+    const rows = await h.ask('in:/outside/many/')
+    // 20 candidate rows plus the back row.
+    expect(rows).toHaveLength(21)
+  })
+
+  it('skips a sub-folder the filesystem refuses to list', async () => {
+    const h = harness({
+      extra: {
+        list: async (_id: string, path: string) =>
+          path === '/outside/half'
+            ? listing(path, [
+                { name: 'fable', kind: 'dir' as const },
+                { name: 'fable.md', kind: 'file' as const },
+              ])
+            : { path, entries: [], truncated: false, error: 'outside' as const },
+      },
+    })
+    const rows = await h.ask('in:/outside/half/')
+    expect(rows.map(row => row.name)).toContain('fable/')
+    expect(rows.map(row => row.name)).toContain('fable.md')
+  })
+
+  it('answers nothing when the seam has no listing at all', async () => {
+    const h = harness()
+    const rows = await h.ask('in:/outside/work/')
+    expect(rows.map(row => row.name)).toEqual(['返回类别'])
+  })
+
+  it('drops the mixed page when the caller was already gone', async () => {
+    const caller = new AbortController()
+    caller.abort()
+    const h = harness()
+    expect(await h.ask('fable', 's1', caller.signal)).toEqual([])
+  })
+
+  it('starts the cold scope listing without waiting, and never raises', async () => {
+    const onUnhandled = vi.fn()
+    process.once('unhandledRejection', onUnhandled)
+    const h = harness({
+      extra: {
+        scopeFolder: () => '/outside/cold',
+        list: async () => {
+          throw new Error('disk gone')
+        },
+      },
+    })
+    await h.ask('fable')
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(onUnhandled).not.toHaveBeenCalled()
+    process.off('unhandledRejection', onUnhandled)
+  })
+
+  it('stays quiet when the draft scope is a workspace folder', async () => {
+    const h = harness({ extra: { scopeFolder: () => '/ws/src', list: async (_id: string, path: string) => listing(path, [{ name: 'fable.zip', kind: 'file' as const }]) } })
+    await h.ask('zz')
+    const rows = await h.ask('fable')
+    // The index already covers it, so nothing is added from the scope.
+    expect(rows.some(row => row.name === 'fable.zip')).toBe(false)
+  })
+
+  it('stays quiet when the listing settled with an error', async () => {
+    const h = harness({
+      extra: {
+        scopeFolder: () => '/outside/broken',
+        list: async (_id: string, path: string) => ({ path, entries: [], truncated: false, error: 'outside' as const }),
+      },
+    })
+    await h.ask('zz')
+    const rows = await h.ask('fable')
+    expect(rows.some(row => row.name === 'fable.zip')).toBe(false)
+  })
+
+  it('walks a second level and answers with both', async () => {
+    const h = harness({
+      extra: {
+        list: async (_id: string, path: string) =>
+          path === '/outside/two'
+            ? listing(path, [
+                { name: 'fable', kind: 'dir' as const },
+                { name: 'fable.md', kind: 'file' as const },
+              ])
+            : listing(path, [{ name: 'fable-icon.png', kind: 'file' as const }]),
+      },
+    })
+    const rows = await h.ask('in:/outside/two/')
+    expect(rows.map(row => row.name)).toEqual(
+      expect.arrayContaining(['fable/', 'fable.md', 'fable-icon.png']),
+    )
+  })
+
+  it('keeps the scoped rows flat when the query also completes a category', async () => {
+    const h = harness({
+      extra: {
+        scopeFolder: () => '/outside/flat',
+        list: async (_id: string, path: string) => listing(path, [{ name: 'pluginish.zip', kind: 'file' as const }]),
+      },
+    })
+    await h.ask('zz')
+    const rows = await h.ask('plug')
+    expect(rows.map(row => row.name)).toContain('pluginish.zip')
+  })
+
+  it('says nothing when the walk was the one that got cancelled', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const caller = new AbortController()
+    const h = harness({
+      extra: {
+        list: async () => {
+          caller.abort()
+          throw new Error('AbortError: gone')
+        },
+      },
+    })
+    await h.ask('in:/outside/away/', 's1', caller.signal)
+    expect(warn).not.toHaveBeenCalled()
+    warn.mockRestore()
+  })
+
+  it('stops descending at the last level it is allowed to open', async () => {
+    const tree: Record<string, { name: string; kind: 'file' | 'dir' }[]> = {
+      '/outside/deep': [{ name: 'fable-l1', kind: 'dir' }],
+      '/outside/deep/fable-l1': [{ name: 'fable-l2', kind: 'dir' }],
+      '/outside/deep/fable-l1/fable-l2': [{ name: 'fable-l3', kind: 'dir' }],
+    }
+    const asked: string[] = []
+    const h = harness({
+      extra: {
+        list: async (_id: string, path: string) => {
+          asked.push(path)
+          const key = Object.keys(tree).find(candidate => candidate === path)
+          return key === undefined ? listing(path, []) : listing(path, tree[key]!)
+        },
+      },
+    })
+    const rows = await h.ask('in:/outside/deep/')
+    // The level-2 folder still matches and is listed, but nothing below it is opened.
+    expect(rows.map(row => row.name)).toEqual(
+      expect.arrayContaining(['fable-l1/', 'fable-l2/', 'fable-l3/']),
+    )
+    // The third level is reported but never opened: that is the depth budget.
+    expect(asked).not.toContain('/outside/deep/fable-l1/fable-l2/fable-l3')
+  })
+
+  it('writes the ledger once however many keystrokes follow', async () => {
+    const spy = vi.fn()
+    const h = harness({ extra: { list: dirs().list, onExternalDir: spy } })
+    await h.ask('in:/outside/work/')
+    await h.ask('in:/outside/work/')
+    await h.ask('in:fab')
+    expect(spy).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps walking when a folder cannot be listed', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const h = harness({
+      extra: {
+        list: async (_id: string, path: string) => {
+          if (path === '/outside/work') throw new Error('disk gone')
+          return listing(path, [])
+        },
+      },
+    })
+    const rows = await h.ask('in:/outside/work/')
+    expect(rows.map(row => row.name)).toEqual(['返回类别'])
+    expect(warn).toHaveBeenCalledWith('[dsh-atlas] declared folder listing failed:', expect.any(Error))
+    warn.mockRestore()
+  })
+
+  it('drops the page when the caller aborts mid-walk', async () => {
+    const caller = new AbortController()
+    const h = harness({
+      extra: {
+        list: async (_id: string, path: string) => {
+          caller.abort()
+          return listing(path, [{ name: 'Fable.zip', kind: 'file' as const }])
+        },
+      },
+    })
+    expect(await h.ask('in:/outside/work', 's1', caller.signal)).toEqual([])
+  })
+})

@@ -587,7 +587,7 @@ describe('category menu', () => {
 
   it('labels every category row with its shortcut letter', () => {
     const rows = categoryRows()
-    expect(rows.map(row => row.description)).toEqual(['F', 'D', 'S', 'C', 'P'])
+    expect(rows.map(row => row.description)).toEqual(['F', 'D', 'S', 'C', 'P', 'I'])
   })
 
   it('resolves exactly one completion target from a shortcut or English prefix', () => {
@@ -1991,6 +1991,7 @@ describe('localized copy', () => {
       'cat.skill',
       'Past chats',
       'cat.plugin',
+      'cat.in',
     ])
     expect(hintRow(CATEGORIES[3] as never, t).description).toBe('Tab completes → chat:')
     expect(categoryTag('chat', t)).toBe('Chat')

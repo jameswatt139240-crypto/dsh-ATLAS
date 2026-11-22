@@ -661,7 +661,7 @@ describe('overlay bridge', () => {
   })
 
   it('keeps every category reachable from the menu row list', () => {
-    expect(CATEGORIES.map(category => category.shortcut)).toEqual(['F', 'D', 'S', 'C', 'P'])
+    expect(CATEGORIES.map(category => category.shortcut)).toEqual(['F', 'D', 'S', 'C', 'P', 'I'])
   })
 })
 
