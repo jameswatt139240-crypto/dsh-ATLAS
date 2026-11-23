@@ -31,8 +31,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          set -u
+          # GitHub runs this script with `bash -e`; one unannounceable tag must not
+          # hide the rest, so errexit is off and every step is checked by hand.
+          set +e
           made=0
+          failed=0
           skipped=0
           for tag in $(git tag --list 'v*' | sort -V); do
             if gh release view "$tag" >/dev/null 2>&1; then
@@ -51,7 +54,15 @@ jobs:
               continue
             fi
             echo "creating release $tag"
-            gh release create "$tag" --title "$version" --notes-file notes.md
-            made=$((made + 1))
+            if gh release create "$tag" --title "$version" --notes-file notes.md; then
+              made=$((made + 1))
+            else
+              echo "gh refused $tag; leaving it for a human"
+              failed=$((failed + 1))
+            fi
           done
-          echo "created ${made}, skipped ${skipped}"
+          echo "created ${made}, skipped ${skipped}, refused ${failed}"
+          if [ "$made" -eq 0 ] && [ "$failed" -gt 0 ]; then
+            echo "nothing was announced and at least one tag was refused" >&2
+            exit 1
+          fi
