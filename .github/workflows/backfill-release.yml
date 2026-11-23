@@ -45,7 +45,7 @@ jobs:
             version="${tag#v}"
             awk -v v="$version" '
               $0 ~ "^## \\[" v "\\]" { capture = 1; next }
-              capture && /^## \\[/ { exit }
+              capture && /^## \[/ { exit }
               capture { print }
             ' CHANGELOG.md > notes.md
             if [ ! -s notes.md ]; then
