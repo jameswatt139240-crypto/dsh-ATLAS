@@ -1,0 +1,57 @@
+# Reconcile the tag list with the release pages.
+#
+# The `release` workflow announces a tag when it is pushed, but tags created before
+# that job existed have no page. This workflow walks every `v*` tag, skips the ones
+# that already have a release, and opens the rest from the matching CHANGELOG section
+# — the same body the announce job writes, so the two can never disagree.
+#
+# It runs when this file itself is pushed (that is the "reconcile now" trigger) and
+# can also be run by hand from the Actions tab.
+
+name: backfill release pages
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/backfill-release.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Open a release page for every tag that lacks one
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -u
+          made=0
+          skipped=0
+          for tag in $(git tag --list 'v*' | sort -V); do
+            if gh release view "$tag" >/dev/null 2>&1; then
+              skipped=$((skipped + 1))
+              continue
+            fi
+            version="${tag#v}"
+            awk -v v="$version" '
+              $0 ~ "^## \\[" v "\\]" { capture = 1; next }
+              capture && /^## \\[/ { exit }
+              capture { print }
+            ' CHANGELOG.md > notes.md
+            if [ ! -s notes.md ]; then
+              echo "$tag: no changelog section, leaving it without a page"
+              skipped=$((skipped + 1))
+              continue
+            fi
+            echo "creating release $tag"
+            gh release create "$tag" --title "$version" --notes-file notes.md
+            made=$((made + 1))
+          done
+          echo "created ${made}, skipped ${skipped}"
