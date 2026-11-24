@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.3.3] - 2026-11-24
+
+### Fixed
+
+- `@in:` rows now say which side the folder is on (`工作区内` / `工作区外`) instead of
+  calling the session workspace "outside", and a folder chosen from `@in:`'s own dialog
+  comes back as `@in:<path>/` rather than a bare `@<path>` — the two halves that shipped
+  as 1.3.2's code but reached npm only in this version.
+
 ## [1.3.2] - 2026-11-24
 
 ### Fixed
