@@ -17,6 +17,9 @@ export declare const zh: {
     'cat.chat': string;
     'cat.plugin': string;
     'cat.in': string;
+    'in.pick': string;
+    'in.pickHint': string;
+    'folder.systems': string;
     'cat.tag.chat': string;
     'hint.complete': string;
     'nav.back': string;
@@ -188,6 +191,9 @@ export declare const en: {
     'cat.chat': string;
     'cat.plugin': string;
     'cat.in': string;
+    'in.pick': string;
+    'in.pickHint': string;
+    'folder.systems': string;
     'cat.tag.chat': string;
     'hint.complete': string;
     'nav.back': string;

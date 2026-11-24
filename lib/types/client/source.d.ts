@@ -33,7 +33,7 @@ declare module '@deepseek-ai/dsh-client-ui-input-trigger/client' {
     }
 }
 /** One mention row kind the picker and the dock both understand. */
-export type MentionKind = 'category' | 'back' | 'file' | 'dir' | 'skill' | 'chat' | 'plugin' | 'provider' | 'chat-group' | 'skill-group' | 'plugin-group' | 'section-header' | 'dir-group' | 'folder-choose' | 'browse-up' | 'browse-dir' | 'browse-file' | 'browse-drive' | 'browse-note';
+export type MentionKind = 'category' | 'back' | 'file' | 'dir' | 'skill' | 'chat' | 'plugin' | 'provider' | 'chat-group' | 'skill-group' | 'plugin-group' | 'section-header' | 'dir-group' | 'folder-choose' | 'browse-up' | 'browse-dir' | 'browse-file' | 'browse-drive' | 'browse-note' | 'in-pick' | 'in-dir';
 /** Owner source name (the lexicon and decoration routing key). */
 export declare const SOURCE_NAME = "atlas";
 /** Design cap on visible picker rows (the menu height is maximized by CSS). */
@@ -151,7 +151,7 @@ export interface MentionSourceDeps {
      * dialog), so it takes over the insertion itself; a `false` answer lets the
      * source fall back to its own in-menu walk.
      */
-    chooseFolder?(sessionId: SessionId, span: TokenSpan): boolean;
+    chooseFolder?(sessionId: SessionId, span: TokenSpan, mode?: 'mention' | 'in'): boolean;
     /**
      * The click action for one mention of the draft, or undefined when this build
      * has none. Used by {@link InputTriggerSource.openReference}: a client that

@@ -618,14 +618,18 @@ export function apply(ctx: ClientContext): void {
    * @param span - the trigger span the menu reported.
    * @returns whether a chooser exists and took over.
    */
-  const chooseFolder = (sessionId: SessionId, span: TokenSpan): boolean => {
+  const chooseFolder = (sessionId: SessionId, span: TokenSpan, mode?: 'mention' | 'in'): boolean => {
     const workspace = optionalService<UIWorkspaceFace>(ctx, 'uiWorkspace')
     const actx = sessions.scope(sid(sessionId))
     if (workspace === undefined || actx === undefined) return false
     const bail = actx as unknown as BailFace
     /** Replace the token with one folder mention (the same write a returned outcome makes). */
     const insert = (path: string): void => {
-      const text = `@${externalPath(path).replace(/[/\\]+$/u, '')}/ `
+      // `@in:` asks for a folder to SEARCH, so the same dialog writes that token
+      // instead of a plain reference — the pick then keeps the prefix and the next
+      // listing is the folder's contents.
+      const head = mode === 'in' ? '@in:' : '@'
+      const text = `${head}${externalPath(path).replace(/[/\\]+$/u, '')}/ `
       bail.bail(actx, 'slash/input-insert-text', { text, span, continue: true })
       rememberExternal(sessionId, path)
     }
@@ -638,7 +642,7 @@ export function apply(ctx: ClientContext): void {
         // the SAME browse backend is then the chooser.
         console.warn('[dsh-atlas] the native folder chooser is unavailable here; opening this plugin\'s own:', error)
       }
-      folderPicker.set({ value: { span } })
+      folderPicker.set({ value: { span, ...(mode === 'in' ? { mode: 'in' as const } : {}) } })
     }
     if (workspace.pickDirectory === undefined) {
       openOwnDialog()
@@ -658,11 +662,12 @@ export function apply(ctx: ClientContext): void {
    * `@<path>/` through the input machine's own span-CAS'd request, then close.
    */
   const adoptPickedFolder = (sessionId: SessionId, path: string): void => {
-    const pending = folderPicker.getSnapshot().value as { span: TokenSpan } | null
+    const pending = folderPicker.getSnapshot().value
     folderPicker.set({ value: null })
     const actx = sessions.scope(sid(sessionId))
     if (pending === null || actx === undefined) return
-    const text = `@${externalPath(path).replace(/[/\\]+$/u, '')}/ `
+    const head = pending.mode === 'in' ? '@in:' : '@'
+    const text = `${head}${externalPath(path).replace(/[/\\]+$/u, '')}/ `
     ;(actx as unknown as BailFace).bail(actx, 'slash/input-insert-text', { text, span: pending.span, continue: true })
     rememberExternal(sessionId, path)
   }
@@ -1505,7 +1510,7 @@ export function apply(ctx: ClientContext): void {
    * The folder chooser's own open state: the token span a confirmed pick replaces.
    * Written by the source's picker row, read by the dialog overlay.
    */
-  const folderPicker = createSnapshotStore<{ value: { span: TokenSpan } | null }>({ value: null })
+  const folderPicker = createSnapshotStore<{ value: { span: TokenSpan; mode?: 'in' } | null }>({ value: null })
 
   // The folder chooser dialog: the product's browse backend with this plugin's face.
   ctx.slots.inject('conversation.input.overlay', () => ctx.slots.register({

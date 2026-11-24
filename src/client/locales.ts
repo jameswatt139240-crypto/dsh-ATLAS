@@ -18,6 +18,11 @@ export const zh = {
   'cat.chat': '过去的聊天',
   'cat.plugin': '插件',
   'cat.in': '指定文件夹',
+
+  'in.pick': '选择文件夹…',
+
+  'in.pickHint': '选一个文件夹，之后在它里面递归搜',
+  'folder.systems': '从根目录开始',
   'cat.tag.chat': '聊天',
   'hint.complete': 'Tab 补全 → {prefix}',
   'nav.back': '返回类别',
@@ -201,6 +206,11 @@ export const en = {
   'cat.chat': 'Past chats',
   'cat.plugin': 'Plugins',
   'cat.in': 'In folder',
+
+  'in.pick': 'Choose a folder…',
+
+  'in.pickHint': 'then search inside it, recursively',
+  'folder.systems': 'Walk from the filesystem root',
   'cat.tag.chat': 'Chat',
   'hint.complete': 'Tab completes → {prefix}',
   'nav.back': 'All categories',

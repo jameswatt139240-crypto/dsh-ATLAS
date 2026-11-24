@@ -1352,15 +1352,57 @@ describe('the folder a draft declares with in:', () => {
     await h.ask('in:/outside/work/')
     const rows = await h.ask('in:godot')
     const row = rows.find(candidate => candidate.name === 'godot-src/')
-    expect(row?.mentionKind).toBe('dir')
+    // `in-dir`, not `dir`: a pick here has to keep the `@in:` prefix so the next
+    // listing is that folder's own contents instead of a plain folder reference.
+    expect(row?.mentionKind).toBe('in-dir')
     expect(row?.value).toBe('/outside/work/godot-src/')
   })
 
-  it('answers nothing before any folder was declared', async () => {
+  it('still opens, with the two ways in, before any folder was declared', async () => {
     const h = harness({ extra: { list: dirs().list } })
     const rows = await h.ask('in:fable')
-    // Only the back row: nothing was declared, so there is nothing to walk.
-    expect(rows.map(row => row.name)).toEqual(['返回类别'])
+    // A menu that answers nothing is a dead end: the chooser and the workspace walk
+    // are what a fresh `@in:` shows, whichever side of the workspace the folder is on.
+    // No index has settled for this session, so the walk starts at the root.
+    expect(rows.map(row => row.name)).toEqual(['返回类别', '选择文件夹…', '/'])
+    expect(rows[1]?.mentionKind).toBe('in-pick')
+    expect(rows[2]?.mentionKind).toBe('in-dir')
+    expect(rows[2]?.value).toBe('/')
+  })
+
+  it('opens the chooser in in-mode, and falls back to the workspace walk', async () => {
+    const calls: { session: string; mode?: string }[] = []
+    const h = harness({
+      extra: {
+        list: dirs().list,
+        chooseFolder: (sessionId: string, _span: unknown, mode?: 'mention' | 'in') => {
+          calls.push({ session: sessionId, mode })
+          return true
+        },
+      },
+    })
+    const rows = await h.ask('in:')
+    const chooser = rows.find(row => row.mentionKind === 'in-pick')
+    expect((h.source.onPick as (input: unknown) => unknown)(pick(chooser))).toBeUndefined()
+    expect(calls).toEqual([{ session: 's1', mode: 'in' }])
+    const quiet = harness({ extra: { list: dirs().list, chooseFolder: () => false } })
+    const fallback = (await quiet.ask('in:')).find(row => row.mentionKind === 'in-pick')
+    const fallbackPick = (quiet.source.onPick as (input: unknown) => unknown)(pick(fallback)) as {
+      readonly text: string
+      readonly continue?: boolean
+    }
+    // Which directory the walk starts at depends on whether the index settled; the
+    // contract is only that it stays inside this category and keeps the menu open.
+    expect(fallbackPick.continue).toBe(true)
+    expect(fallbackPick.text.startsWith('@in:/')).toBe(true)
+  })
+
+  it('keeps the @in: prefix when a folder row is picked', async () => {
+    const h = harness({ extra: { list: dirs().list } })
+    const rows = await h.ask('in:/outside/work/')
+    const child = rows.find(row => row.name === 'godot-src/')
+    expect((h.source.onPick as (input: unknown) => unknown)(pick(child)))
+      .toEqual({ text: '@in:/outside/work/godot-src/', continue: true })
   })
 
   it('declares a folder whose path has no inner separator', async () => {

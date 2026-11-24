@@ -56,6 +56,7 @@ declare module '@deepseek-ai/dsh-client-ui-input-trigger/client' {
 /** One mention row kind the picker and the dock both understand. */
 export type MentionKind = 'category' | 'back' | 'file' | 'dir' | 'skill' | 'chat' | 'plugin' | 'provider' | 'chat-group' | 'skill-group' | 'plugin-group' | 'section-header'
   | 'dir-group' | 'folder-choose' | 'browse-up' | 'browse-dir' | 'browse-file' | 'browse-drive' | 'browse-note'
+  | 'in-pick' | 'in-dir'
 
 /** Owner source name (the lexicon and decoration routing key). */
 export const SOURCE_NAME = 'atlas'
@@ -250,7 +251,7 @@ export interface MentionSourceDeps {
    * dialog), so it takes over the insertion itself; a `false` answer lets the
    * source fall back to its own in-menu walk.
    */
-  chooseFolder?(sessionId: SessionId, span: TokenSpan): boolean
+  chooseFolder?(sessionId: SessionId, span: TokenSpan, mode?: 'mention' | 'in'): boolean
   /**
    * The click action for one mention of the draft, or undefined when this build
    * has none. Used by {@link InputTriggerSource.openReference}: a client that
@@ -1914,7 +1915,34 @@ export function createMentionSource(deps: MentionSourceDeps): MentionSource {
     } else {
       path = inFolders.get(sessionId)
     }
-    if (path === undefined || path.trim() === '') return []
+    if (path === undefined || path.trim() === '') {
+      // Nothing declared yet. A menu that answers nothing is a dead end (`@in:` on a
+      // fresh session showed no menu at all), so the two ways in are the two rows:
+      // the product's own chooser, and a walk that starts at the session workspace —
+      // which covers both a folder outside the workspace and one inside it.
+      const root = workspaceRootOf(sessionId)
+      const rows: MentionCandidate[] = [
+        {
+          name: t?.('in.pick') ?? '选择文件夹…',
+          icon: menuIconKind('folder'),
+          value: '',
+          mentionKind: 'in-pick' as const,
+          description: t?.('in.pickHint') ?? '选一个文件夹，之后在它里面递归搜',
+        },
+      ]
+      // The walk starts at the session workspace when its index has settled, and at
+      // the filesystem root otherwise: a directory listing is one pick away either
+      // way, and a session that never indexed a file still gets a usable tree.
+      const start = root === '' ? '/' : `${root.replace(/[/\\]+$/u, '')}/`
+      rows.push({
+        name: root === '' ? '/' : `${basenameOf(root)}/`,
+        icon: menuIconKind('folder'),
+        value: start,
+        mentionKind: 'in-dir' as const,
+        description: root === '' ? (t?.('folder.systems') ?? '从根目录开始') : (t?.('folder.workspace') ?? '工作区'),
+      })
+      return rows
+    }
     const trimmed = path.replace(/[/\\]+$/u, '')
     const normalized = trimmed === '' ? '/' : trimmed
     inFolders.set(sessionId, normalized)
@@ -1958,7 +1986,7 @@ export function createMentionSource(deps: MentionSourceDeps): MentionSource {
             icon: menuIconKind('folder'),
             value: `${childOf(listing.path, entry.name)}/`,
             atFileKind: 'dir' as const,
-            mentionKind: 'dir' as const,
+            mentionKind: 'in-dir' as const,
             description: `${outside} · ${where}`,
           })
           if (deeper) queue.push({ dir: childOf(listing.path, entry.name), depth: current.depth + 1 })
@@ -2441,6 +2469,18 @@ export function createMentionSource(deps: MentionSourceDeps): MentionSource {
         // list needs; the file itself is not a directory and is never recorded.
         if (candidate.value !== undefined) deps.onExternalDir?.(session.sessionId, dirnameOf(candidate.value))
         return { text: `@${candidate.value ?? ''} ` }
+      }
+      if (candidate.mentionKind === 'in-pick') {
+        // The chooser inserts by itself (it is async, this path is not); a build
+        // without one falls back to walking the workspace inside this category.
+        if (deps.chooseFolder?.(session.sessionId, span, 'in') === true) return undefined
+        return { text: `@in:${workspaceRootOf(session.sessionId)}/`, continue: true }
+      }
+      if (candidate.mentionKind === 'in-dir') {
+        // Picking a folder here keeps the `@in:` prefix, so the next listing is that
+        // folder's own contents: the walk and the recursive search share one token.
+        if (candidate.value !== undefined) deps.onExternalDir?.(session.sessionId, candidate.value)
+        return { text: `@in:${candidate.value ?? ''}`, continue: true }
       }
       if (candidate.mentionKind === 'dir-group' || candidate.mentionKind === 'browse-note') {
         // A group header folds and a note says something: neither inserts text.

@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.3.2] - 2026-11-24
+
+### Fixed
+
+- `@in:` on a session that had not declared a folder yet answered **nothing**, so the
+  menu never opened. It now opens with two ways in: `选择文件夹…` (the product's own
+  picker, which writes `@in:<path>/`) and a walk that starts at the session workspace
+  — or at `/` when no index has settled — so a folder inside the workspace and one
+  outside it are both reachable without typing a path.
+- Picking a folder inside `@in:` kept only the folder: the row wrote a plain
+  `@<path>/` and the prefix was lost. It now writes `@in:<path>/`, so picking is how
+  you drill, and the recursive search stays in the same token.
+
 ## [1.3.1] - 2026-11-22
 
 ### Fixed
