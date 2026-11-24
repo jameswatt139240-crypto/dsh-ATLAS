@@ -1370,6 +1370,45 @@ describe('the folder a draft declares with in:', () => {
     expect(rows[2]?.value).toBe('/')
   })
 
+  it('starts the walk at the settled workspace, and survives a binder with no string', async () => {
+    // No translator answers (a partial locale): every label falls back to the
+    // built-in Chinese copy, and the walk starts at the workspace the index settled
+    // on instead of the filesystem root.
+    const h = harness({ extra: { t: (() => undefined) as never } })
+    await h.ask('')
+    const rows = await h.ask('in:')
+    expect(rows.map(row => row.name)).toEqual(['返回类别', '选择文件夹…', 'ws/'])
+    expect(rows[2]?.value).toBe('/ws/')
+    expect(rows[2]?.description).toBe('工作区')
+  })
+
+  it('calls a folder that sits inside the workspace what it is', async () => {
+    // The rows used to say "工作区外" for every declared folder, including the
+    // workspace itself; the label now follows the side the folder is on.
+    const h = harness({
+      extra: {
+        t: (() => undefined) as never,
+        list: async (id: string, path: string) => ({
+          ...listing(path, [{ name: 'notes.md', kind: 'file' as const }]),
+        }),
+      },
+    })
+    await h.ask('')
+    const rows = await h.ask('in:/ws/work/')
+    const row = rows.find(candidate => candidate.name === 'notes.md')
+    expect(row?.description).toBe('工作区内 · /ws/work')
+  })
+
+  it('drafts the bare prefix when the folder row carries no path', async () => {
+    const h = harness()
+    const picked = (h.source.onPick as (input: unknown) => unknown)(pick({
+      name: 'bare/',
+      mentionKind: 'in-dir',
+      value: undefined,
+    }))
+    expect(picked).toEqual({ text: '@in:', continue: true })
+  })
+
   it('opens the chooser in in-mode, and falls back to the workspace walk', async () => {
     const calls: { session: string; mode?: string }[] = []
     const h = harness({

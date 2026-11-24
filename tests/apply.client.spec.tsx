@@ -1791,6 +1791,33 @@ describe('dsh-atlas folder escape hatches', () => {
     expect(registered(bare).onPick?.({ candidate: folderRow, session, action: 'accept', span: { start: 0, end: 2 } })).toBeUndefined()
     expect(registered(bare).name).toBe(SOURCE_NAME)
   })
+
+  it('writes the @in: token when the chooser was opened from that category', async () => {
+    const pickDirectory = vi.fn(async () => '/picked/reports')
+    const booted = await boot({ uiWorkspace: { pickDirectory, createDirectory: async () => '' } })
+    const inRow = { name: '选择文件夹…', value: '', mentionKind: 'in-pick' }
+    // The chooser answers: the token keeps the category prefix, so the next listing
+    // is that folder's own contents instead of a plain reference.
+    expect(registered(booted).onPick?.({ candidate: inRow, session: s1, action: 'accept', span: { start: 0, end: 5 } }))
+      .toBeUndefined()
+    await settle()
+    const call = booted.sessionBail.mock.calls.at(-1) as unknown as [unknown, string, { text: string }]
+    expect(call[2].text).toBe('@in:/picked/reports/ ')
+
+    // Without a native chooser the plugin's own dialog opens, and remembering that
+    // it was opened in in-mode is what keeps the prefix on that answer too.
+    const bare = await boot({ uiWorkspace: { createDirectory: async () => '' } })
+    registered(bare).onPick?.({ candidate: inRow, session: s1, action: 'accept', span: { start: 0, end: 5 } })
+    const picker = pickerOf(bare).inject('s1') as unknown as {
+      confirm: (path: string) => void
+      hooks: { folderPicker: { getSnapshot: () => { value: { mode?: string } | null } } }
+    }
+    expect(picker.hooks.folderPicker.getSnapshot().value?.mode).toBe('in')
+    picker.confirm('/picked/inside')
+    await settle()
+    const ownCall = bare.sessionBail.mock.calls.at(-1) as unknown as [unknown, string, { text: string }]
+    expect(ownCall[2].text).toBe('@in:/picked/inside/ ')
+  })
 })
 
 describe('the folder a pick puts into the ledger', () => {

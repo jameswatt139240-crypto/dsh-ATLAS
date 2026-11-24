@@ -23,6 +23,8 @@ export const zh = {
 
   'in.pickHint': '选一个文件夹，之后在它里面递归搜',
   'folder.systems': '从根目录开始',
+  'in.workspace': '工作区',
+  'in.inside': '工作区内',
   'cat.tag.chat': '聊天',
   'hint.complete': 'Tab 补全 → {prefix}',
   'nav.back': '返回类别',
@@ -211,6 +213,8 @@ export const en = {
 
   'in.pickHint': 'then search inside it, recursively',
   'folder.systems': 'Walk from the filesystem root',
+  'in.workspace': 'Workspace',
+  'in.inside': 'In workspace',
   'cat.tag.chat': 'Chat',
   'hint.complete': 'Tab completes → {prefix}',
   'nav.back': 'All categories',

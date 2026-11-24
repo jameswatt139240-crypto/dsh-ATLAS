@@ -16,7 +16,7 @@ import { rankFiles } from './search.ts'
 import { menuIconKind } from './icons.tsx'
 import type { ChatCandidate, FileEntry, PluginCandidate, SkillCandidate } from './remote.ts'
 import type { DirectoryListing, ExternalAccessScope, UsageEntry } from '../contract.ts'
-import { externalPath, isAbsoluteReference } from '../external.ts'
+import { externalPath, isAbsoluteReference, isUnder } from '../external.ts'
 import type { AtlasItem, AtlasRegistration } from '../atlas.ts'
 import type { SkillTier } from '../contract.ts'
 import { decodeDraftReference, type ReferenceLink } from './reference-links.ts'
@@ -1939,7 +1939,7 @@ export function createMentionSource(deps: MentionSourceDeps): MentionSource {
         icon: menuIconKind('folder'),
         value: start,
         mentionKind: 'in-dir' as const,
-        description: root === '' ? (t?.('folder.systems') ?? '从根目录开始') : (t?.('folder.workspace') ?? '工作区'),
+        description: root === '' ? (t?.('folder.systems') ?? '从根目录开始') : (t?.('in.workspace') ?? '工作区'),
       })
       return rows
     }
@@ -1953,7 +1953,13 @@ export function createMentionSource(deps: MentionSourceDeps): MentionSource {
     }
     const list = deps.list
     if (list === undefined) return []
-    const outside = t?.('folder.outside') ?? '工作区外'
+    // A declared folder may be the workspace itself or a folder inside it, so the
+    // row says which side it is on instead of always claiming "outside".
+    const workspaceRoot = workspaceRootOf(sessionId)
+    const side = (dir: string): string =>
+      workspaceRoot !== '' && isUnder(workspaceRoot, dir)
+        ? (t?.('in.inside') ?? '工作区内')
+        : (t?.('folder.outside') ?? '工作区外')
     const wanted = needle.toLowerCase()
     const rows: MentionCandidate[] = []
     const queue: { readonly dir: string; readonly depth: number }[] = [{ dir: normalized, depth: 0 }]
@@ -1987,7 +1993,7 @@ export function createMentionSource(deps: MentionSourceDeps): MentionSource {
             value: `${childOf(listing.path, entry.name)}/`,
             atFileKind: 'dir' as const,
             mentionKind: 'in-dir' as const,
-            description: `${outside} · ${where}`,
+            description: `${side(normalized)} · ${where}`,
           })
           if (deeper) queue.push({ dir: childOf(listing.path, entry.name), depth: current.depth + 1 })
         } else {
@@ -1997,7 +2003,7 @@ export function createMentionSource(deps: MentionSourceDeps): MentionSource {
             value: childOf(listing.path, entry.name),
             atFileKind: 'file' as const,
             mentionKind: 'file' as const,
-            description: `${outside} · ${where}`,
+            description: `${side(normalized)} · ${where}`,
           })
         }
       }

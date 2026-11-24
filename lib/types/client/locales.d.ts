@@ -20,6 +20,8 @@ export declare const zh: {
     'in.pick': string;
     'in.pickHint': string;
     'folder.systems': string;
+    'in.workspace': string;
+    'in.inside': string;
     'cat.tag.chat': string;
     'hint.complete': string;
     'nav.back': string;
@@ -194,6 +196,8 @@ export declare const en: {
     'in.pick': string;
     'in.pickHint': string;
     'folder.systems': string;
+    'in.workspace': string;
+    'in.inside': string;
     'cat.tag.chat': string;
     'hint.complete': string;
     'nav.back': string;
