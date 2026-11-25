@@ -1399,6 +1399,17 @@ describe('the folder a draft declares with in:', () => {
     expect(row?.description).toBe('工作区内 · /ws/work')
   })
 
+  it('says when a level was cut instead of dropping a match off the end', async () => {
+    const h = harness({
+      extra: {
+        list: async (id: string, path: string) => ({ ...listing(path, [{ name: 'one.md', kind: 'file' as const }]), truncated: true }),
+      },
+    })
+    const rows = await h.ask('in:/outside/big/')
+    expect(rows.some(row => row.name.includes('条目过多'))).toBe(true)
+    expect(rows.some(row => row.name === 'one.md')).toBe(true)
+  })
+
   it('drafts the bare prefix when the folder row carries no path', async () => {
     const h = harness()
     const picked = (h.source.onPick as (input: unknown) => unknown)(pick({

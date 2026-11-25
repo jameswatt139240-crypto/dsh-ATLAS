@@ -331,6 +331,28 @@ describe('the empty request and a level larger than one page', () => {
     }
   })
 
+  it('flags a level that really does run past the cap', async () => {
+    // 2000 is the cap now; one folder of 2005 shows the flag rather than a silent loss.
+    const cwd = await workspace()
+    for (let index = 0; index < 2005; index += 1) {
+      await writeFile(join(cwd, `wide-${String(index).padStart(4, '0')}.txt`), 'x', 'utf8')
+    }
+    const ctx = new Context()
+    const fiber = await mount(ctx)
+    try {
+      const runtime = ctx.get('atFile') as AtFileRuntime
+      const browsed = await runtime.browse(agentWith(cwd), cwd, new AbortController().signal)
+      expect(browsed.truncated).toBe(true)
+      expect(browsed.entries.length).toBe(2000)
+      const listed = await runtime.list(agentWith(cwd), cwd, '', new AbortController().signal)
+      expect(listed.truncated).toBe(true)
+      expect(listed.entries.length).toBe(2000)
+    } finally {
+      await fiber.dispose()
+      await rm(dirname(cwd), { recursive: true, force: true })
+    }
+  })
+
   it('says the level was cut when a folder holds more than one page', async () => {
     const cwd = await workspace()
     for (let index = 0; index < 205; index += 1) {
@@ -341,8 +363,10 @@ describe('the empty request and a level larger than one page', () => {
     try {
       const runtime = ctx.get('atFile') as AtFileRuntime
       const browsed = await runtime.browse(agentWith(cwd), cwd, new AbortController().signal)
-      expect(browsed.truncated).toBe(true)
-      expect(browsed.entries.length).toBeLessThanOrEqual(200)
+      // The cap sits at 2000 (a WeChat attachment folder holds 529), so a folder of
+      // 205 is listed whole instead of being cut before the client can filter it.
+      expect(browsed.truncated).not.toBe(true)
+      expect(browsed.entries.length).toBeGreaterThanOrEqual(205)
     } finally {
       await fiber.dispose()
       await rm(dirname(cwd), { recursive: true, force: true })
@@ -396,8 +420,8 @@ describe('a level larger than one page, asked for by name', () => {
     try {
       const runtime = ctx.get('atFile') as AtFileRuntime
       const listing = await runtime.list(agentWith(cwd), cwd, '', new AbortController().signal)
-      expect(listing.truncated).toBe(true)
-      expect(listing.entries.length).toBeLessThanOrEqual(200)
+      expect(listing.truncated).not.toBe(true)
+      expect(listing.entries.length).toBeGreaterThanOrEqual(205)
     } finally {
       await fiber.dispose()
       await rm(dirname(cwd), { recursive: true, force: true })

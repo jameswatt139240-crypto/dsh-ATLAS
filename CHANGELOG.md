@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.3.4] - 2026-11-25
+
+### Fixed
+
+- A folder listing is capped in readdir order *before* the client filters it, so a
+  529-entry WeChat attachment folder could hide a note that sat at position 350 —
+  `@in:<folder>` looked like it simply did not have the file. The host cap is now
+  2000 rows, and a cut level says so in the menu instead of ending silently.
+
 ## [1.3.3] - 2026-11-24
 
 ### Fixed

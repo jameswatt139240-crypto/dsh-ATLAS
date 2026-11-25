@@ -466,8 +466,15 @@ const CHILD_PROBE_CONCURRENCY = 8
 /** How long the child probes of one listing may take before flags are dropped. */
 const CHILD_PROBE_BUDGET_MS = 600
 
-/** How many rows one directory listing may carry (bounded browser, bounded wire). */
-const DIRECTORY_ENTRY_LIMIT = 200
+/**
+ * How many rows one directory listing may carry (bounded browser, bounded wire).
+ *
+ * The cap is applied in readdir order, before the sort and before the client gets to
+ * filter, so a folder that mixes media with notes can hide the note behind 200 exports.
+ * One WeChat attachment folder measured 529 entries with the wanted markdown at
+ * position 350; 2000 covers those without letting a pathological folder flood the wire.
+ */
+const DIRECTORY_ENTRY_LIMIT = 2000
 
 /** One drive root as the wire spells it (`E:/`). */
 const DRIVE_ROOT = /^[a-z]:\/$/iu

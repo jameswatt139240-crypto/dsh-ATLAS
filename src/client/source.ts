@@ -1976,6 +1976,11 @@ export function createMentionSource(deps: MentionSourceDeps): MentionSource {
       }
       if (signal.aborted) return []
       if (listing.error !== undefined) continue
+      if (listing.truncated === true) {
+        // The host caps one listing (2000 rows, read in readdir order), so say when a
+        // level was cut instead of letting a match quietly fall off the end.
+        rows.push(browseNote(t?.('folder.truncated') ?? '条目过多，只显示前 2000 项。'))
+      }
       const prefix = current.dir === normalized ? '' : current.dir.slice(normalized.length).replace(/^[/\\]+/u, '')
       for (const entry of listing.entries) {
         if (rows.length >= MAX_CANDIDATES) break
