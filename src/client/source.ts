@@ -1891,11 +1891,16 @@ export function createMentionSource(deps: MentionSourceDeps): MentionSource {
     sub: string,
     signal: AbortSignal,
   ): Promise<readonly MentionCandidate[]> => {
-    const declared = sub.trim()
+    // A second `@` typed right after the declaration (`@in:/data/reports/@待`) is how
+    // people chain two mentions without a space: everything up to that `@` is the
+    // declaration, and the query is what follows it. Without this the needle kept
+    // its leading `@` and matched nothing.
+    const marker = sub.lastIndexOf('@')
+    const declared = (marker >= 0 ? sub.slice(0, marker) : sub).trim()
     const looksAbsolute =
       declared.startsWith('/') || declared.startsWith('~') || /^[A-Za-z]:[\\/]/u.test(declared)
     let path: string | undefined
-    let needle = declared
+    let needle = marker >= 0 ? sub.slice(marker + 1).trim() : declared
     if (looksAbsolute) {
       // A TRAILING separator declares the folder itself (`@in:/a/b/`); without it the
       // last segment is the query (`@in:/a/b/fab` searches /a/b for "fab").
@@ -2485,13 +2490,16 @@ export function createMentionSource(deps: MentionSourceDeps): MentionSource {
         // The chooser inserts by itself (it is async, this path is not); a build
         // without one falls back to walking the workspace inside this category.
         if (deps.chooseFolder?.(session.sessionId, span, 'in') === true) return undefined
-        return { text: `@in:${workspaceRootOf(session.sessionId)}/`, continue: true }
+        return { text: `@in:${workspaceRootOf(session.sessionId)}/ `, continue: true }
       }
       if (candidate.mentionKind === 'in-dir') {
         // Picking a folder here keeps the `@in:` prefix, so the next listing is that
         // folder's own contents: the walk and the recursive search share one token.
         if (candidate.value !== undefined) deps.onExternalDir?.(session.sessionId, candidate.value)
-        return { text: `@in:${candidate.value ?? ''}`, continue: true }
+        // The trailing space ends the token: the next `@` starts a fresh mention, which
+        // is what makes `@in:<folder>/ @<query>` search the folder instead of reading
+        // the `@` as part of this one.
+        return { text: `@in:${candidate.value ?? ''} `, continue: true }
       }
       if (candidate.mentionKind === 'dir-group' || candidate.mentionKind === 'browse-note') {
         // A group header folds and a note says something: neither inserts text.

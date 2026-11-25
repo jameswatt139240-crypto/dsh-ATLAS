@@ -29,6 +29,14 @@ describe('draft scope', () => {
     await expect(draftScopeOf(['', '@e:/outsidedir/', '@file:'], probe(['e:/outsidedir']))).resolves.toBe('e:/outsidedir')
   })
 
+  it('reads a folder our own handles declared, so a plain @ after one still searches it', async () => {
+    // `@in:/data/reports/` and `@folder:C:/work/` decode to no reference on their own;
+    // without unwrapping them, the `@` the user types next had no scope at all.
+    await expect(draftScopeOf(['@in:/data/reports/', '@待触达'], probe())).resolves.toBe('/data/reports')
+    await expect(draftScopeOf(['@folder:C:/work/', '@q3'], probe())).resolves.toBe('C:/work')
+    await expect(draftScopeOf(['@in:q3'], probe())).resolves.toBeUndefined()
+  })
+
   it('never scopes a token by itself, so a typed category is not its own folder', async () => {
     const host = probe(['file:Ea', 'folder:Ea'])
     // `file:Ea` carries a colon in its first segment and names no resource, so the

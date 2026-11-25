@@ -11,6 +11,22 @@
  */
 import { draftLink } from './draft-links.ts'
 
+/**
+ * The path token a category handle stands for, so a folder declared with our own
+ * prefix scopes the next token the way a bare path does.
+ *
+ * `@in:/data/reports/` and `@folder:C:/work/` are how the menu writes a folder the
+ * user picked, but `decodeDraftReference` reads `in:` as an unusable first segment
+ * and gives up, so a plain `@` typed after one answered nothing at all — the
+ * conversation that reported it typed exactly that and got an empty menu.
+ * @param token - one draft token, trigger included.
+ * @returns the token with the handle replaced by a bare `@`, or the token itself.
+ */
+function folderHandleOf(token: string): string {
+  const handle = /^@(?:in|folder):(?=[/\\]|[A-Za-z]:[/\\])/u.exec(token)
+  return handle === null ? token : `@${token.slice(handle[0].length)}`
+}
+
 /** What {@link draftScopeOf} cannot read for itself. */
 export interface ScopeProbe {
   /**
@@ -35,8 +51,9 @@ export interface ScopeProbe {
  */
 export async function draftScopeOf(tokens: readonly string[], probe: ScopeProbe): Promise<string | undefined> {
   for (let index = tokens.length - 1; index >= 0; index -= 1) {
-    const token = tokens[index]
-    if (token === undefined) continue
+    const raw = tokens[index]
+    if (raw === undefined) continue
+    const token = folderHandleOf(raw)
     const link = draftLink(token)
     if (link === undefined) continue
     if (link.kind === 'folder') return link.path

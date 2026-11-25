@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.3.5] - 2026-11-25
+
+### Fixed
+
+- A folder declared with our own handle (`@in:/data/reports/`, `@folder:C:/work/`) now
+  scopes the next token: the draft scanner read `in:` as an unusable first path segment
+  and gave up, so a plain `@` typed after the declaration answered nothing — the exact
+  two-step the menu itself writes. `@待触达` after `@in:<folder>/` lists that folder's
+  matches again.
+
 ## [1.3.4] - 2026-11-25
 
 ### Fixed

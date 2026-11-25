@@ -1399,6 +1399,17 @@ describe('the folder a draft declares with in:', () => {
     expect(row?.description).toBe('工作区内 · /ws/work')
   })
 
+  it('treats a second @ inside the query as the start of the query, not of the path', async () => {
+    // People chain two mentions without a space: `@in:/outside/work/@待触达`.
+    const h = harness({
+      extra: {
+        list: async (id: string, path: string) => listing(path, [{ name: '待触达话术.md', kind: 'file' as const }]),
+      },
+    })
+    const rows = await h.ask('in:/outside/work/@待触达')
+    expect(rows.some(row => row.name === '待触达话术.md')).toBe(true)
+  })
+
   it('says when a level was cut instead of dropping a match off the end', async () => {
     const h = harness({
       extra: {
@@ -1417,7 +1428,7 @@ describe('the folder a draft declares with in:', () => {
       mentionKind: 'in-dir',
       value: undefined,
     }))
-    expect(picked).toEqual({ text: '@in:', continue: true })
+    expect(picked).toEqual({ text: '@in: ', continue: true })
   })
 
   it('opens the chooser in in-mode, and falls back to the workspace walk', async () => {
@@ -1445,6 +1456,7 @@ describe('the folder a draft declares with in:', () => {
     // contract is only that it stays inside this category and keeps the menu open.
     expect(fallbackPick.continue).toBe(true)
     expect(fallbackPick.text.startsWith('@in:/')).toBe(true)
+    expect(fallbackPick.text.endsWith(' ')).toBe(true)
   })
 
   it('keeps the @in: prefix when a folder row is picked', async () => {
@@ -1452,7 +1464,7 @@ describe('the folder a draft declares with in:', () => {
     const rows = await h.ask('in:/outside/work/')
     const child = rows.find(row => row.name === 'godot-src/')
     expect((h.source.onPick as (input: unknown) => unknown)(pick(child)))
-      .toEqual({ text: '@in:/outside/work/godot-src/', continue: true })
+      .toEqual({ text: '@in:/outside/work/godot-src/ ', continue: true })
   })
 
   it('declares a folder whose path has no inner separator', async () => {
